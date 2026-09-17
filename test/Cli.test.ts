@@ -17,11 +17,10 @@ describe("isRuleArray", () => {
 })
 
 describe("loadRules", () => {
-  it("loads a rule file, falling back to preset when empty", async () => {
+  it("loads a rule file and rejects empty paths", async () => {
     const fromFile = await Effect.runPromise(loadRules("test/fixtures/rules-valid.ts"))
     expect(fromFile.map((r) => r.id)).toContain("test/rule")
-    const preset = await Effect.runPromise(loadRules(""))
-    expect(preset.map((r) => r.id)).toContain("effect/no-throw")
+    await expect(Effect.runPromise(loadRules(""))).rejects.toThrow(/No rule file/)
   })
 
   it("fails on invalid rule files and missing paths", async () => {

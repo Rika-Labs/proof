@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { effectStrict } from "../src/presets.ts"
 import { checkHunkBatched, noulQuestion, reviewDiff, splitDiff } from "../src/Review.ts"
 import { Effect } from "effect"
 import { Jev } from "../src/Jev.ts"
@@ -134,17 +133,6 @@ describe("checkHunkBatched", () => {
     expect(calls).toBe(1)
     expect(flags.map((f) => f.ruleId).toSorted()).toEqual(["c", "n"])
     expect(flags[0]?.line).toBe(3)
-  })
-})
-
-describe("effectStrict preset", () => {
-  it("has the expected rule ids", () => {
-    const ids = effectStrict.map((rule) => rule.id)
-    expect(ids).toContain("effect/no-throw")
-    expect(ids).toContain("effect/no-async-leak")
-    expect(ids).toContain("effect/typed-errors")
-    expect(ids).toContain("effect/no-env-global")
-    expect(ids).toContain("effect/idiomatic")
   })
 })
 

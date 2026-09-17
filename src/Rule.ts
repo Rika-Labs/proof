@@ -126,7 +126,7 @@ export const score = (args: {
   }
 }
 
-export const define = (args: { readonly rules: ReadonlyArray<Rule> }) => args
+export const define = (rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> => rules
 
 export const matchesFile = (rule: Rule, file: string): boolean => {
   const patterns = rule.include

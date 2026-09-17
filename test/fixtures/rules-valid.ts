@@ -1,3 +1,6 @@
-import { Presets, Rule } from "../../src/index.ts"
+import { Rule } from "../../src/index.ts"
 
-export default [...Presets.effectStrict, Rule.noul({ id: "test/rule", statement: "Be nice" })]
+export default Rule.define([
+  Rule.noul({ id: "test/rule", statement: "Be nice" }),
+  Rule.noul({ id: "test/other", statement: "Be kind" }),
+])

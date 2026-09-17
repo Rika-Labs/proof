@@ -22,23 +22,20 @@ A rule file is a TypeScript module default-exporting a `Rule[]`. Each rule is a 
 
 ```ts
 // proof.rules.ts
-import { Presets, Rule } from "@rikalabs/proof"
+import { Rule } from "@rikalabs/proof"
 
-export default Rule.define({
-  rules: [
-    ...Presets.effectStrict,
-    Rule.noul({
-      id: "errors-helpful",
-      severity: "request-changes",
-      threshold: 0.85,
-      statement: `Error messages must tell the user what to do next. Flag throw new Error("invalid"), empty catches, or errors that swallow the cause.`,
-      examples: {
-        violate: [`catch (e) { throw new Error("failed") }`],
-        clean: [`Effect.catchTag("HttpError", (cause) => new AuthError({ cause }))`],
-      },
-    }),
-  ],
-}).rules
+export default Rule.define([
+  Rule.noul({
+    id: "errors-helpful",
+    severity: "request-changes",
+    threshold: 0.85,
+    statement: `Error messages must tell the user what to do next. Flag throw new Error("invalid"), empty catches, or errors that swallow the cause.`,
+    examples: {
+      violate: [`catch (e) { throw new Error("failed") }`],
+      clean: [`Effect.catchTag("HttpError", (cause) => new AuthError({ cause }))`],
+    },
+  }),
+])
 ```
 
 Three rule kinds, one per Jev primitive:
@@ -49,8 +46,6 @@ Three rule kinds, one per Jev primitive:
 
 Every rule carries `severity` (`comment` | `request-changes`) and a `threshold`. Confidence policy: `<0.5` skip, `0.5–0.75` nit, `>=0.75` flag, `>=0.85 + request-changes` block.
 
-`Presets.effectStrict` ships the shared Effect TS baseline (`no-throw`, `no-async-leak`, `typed-errors`, `no-env-global`, `no-explicit-any`, plus an `idiomatic` score and an `action` router) — extend it, don't rewrite it.
-
 ## 2. Enforce it
 
 One lint command, locally or in CI. Reviews only changed lines, never the whole codebase:
@@ -58,9 +53,6 @@ One lint command, locally or in CI. Reviews only changed lines, never the whole 
 ```sh
 # lint the current branch against your rule file
 bunx --package @rikalabs/proof cli review --base origin/main --head HEAD --rules ./proof.rules.ts
-
-# omit --rules to use the built-in Effect preset
-bunx --package @rikalabs/proof cli review --base origin/main --head HEAD
 ```
 
 ```sh
@@ -101,7 +93,7 @@ jobs:
 - uses: Rika-Labs/proof@v0.3.0
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
-    rules: ./proof.rules.ts # omit for the built-in Effect preset
+    rules: ./proof.rules.ts
     fail-on: request-changes # or: comment
     min-confidence: "0.85"
     comment: "true" # inline PR comments on flagged lines
@@ -114,7 +106,7 @@ Jev outages warn instead of failing (`{ flags: [], error }`) — gate on the err
 
 ## 3. MCP
 
-The same engine as a stdio MCP server — `proof_check` for one-off rules, `proof_review_diff` for the preset, `proof_list_rules` for discovery:
+The same engine as a stdio MCP server — `proof_check` checks one hunk against one plain-english rule, no rule file needed:
 
 ```sh
 bunx --package @rikalabs/proof mcp

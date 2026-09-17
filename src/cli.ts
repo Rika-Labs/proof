@@ -12,7 +12,6 @@ import { Command, Flag } from "effect/unstable/cli"
 import { resolve } from "node:path"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
 import { layer as JevLive } from "./Jev.ts"
-import { effectStrict } from "./presets.ts"
 import { reviewDiff, splitDiff } from "./Review.ts"
 import { type Rule } from "./Rule.ts"
 
@@ -63,7 +62,9 @@ export const isRuleArray = (value: unknown): value is ReadonlyArray<Rule> =>
 /** Load a rule file (TS module default-exporting a Rule[]) or fall back to the built-in preset. */
 export const loadRules = (path: string): Effect.Effect<ReadonlyArray<Rule>, BadArgs> =>
   Effect.gen(function* () {
-    if (path === "") return effectStrict
+    if (path === "") {
+      return yield* new BadArgs({ message: "No rule file: pass --rules ./proof.rules.ts" })
+    }
     const mod = (yield* Effect.tryPromise({
       try: () => import(resolve(process.cwd(), path)) as Promise<{ default?: unknown }>,
       catch: (e) =>
@@ -124,9 +125,7 @@ const review = Command.make(
       Flag.withDefault(false),
     ),
     rules: Flag.String("rules").pipe(
-      Flag.withDescription(
-        "Path to a rule file (TS module default-exporting Rule[]). Default: built-in Effect preset",
-      ),
+      Flag.withDescription("Path to a rule file (TS module default-exporting Rule[]). Required."),
       Flag.withDefault(""),
     ),
   },
