@@ -119,7 +119,11 @@ export const define = (args: { readonly rules: ReadonlyArray<Rule> }) => args
 
 export const matchesFile = (rule: Rule, file: string): boolean => {
   const patterns = rule.include
-  if (patterns !== undefined && patterns.length > 0 && !patterns.some((pattern) => globMatch(pattern, file))) {
+  if (
+    patterns !== undefined &&
+    patterns.length > 0 &&
+    !patterns.some((pattern) => globMatch(pattern, file))
+  ) {
     return false
   }
   const excluded = rule.exclude
@@ -132,8 +136,12 @@ export type FileRole = "test" | "config" | "docs" | "source"
 /** Classify a path so judgments can weigh what kind of file they're looking at. */
 export const roleForFile = (file: string): FileRole => {
   if (
-    file.endsWith(".test.ts") || file.endsWith(".test.js") || file.endsWith(".spec.ts") ||
-    file.includes("/test/") || file.includes("/tests/") || file.includes("__tests__")
+    file.endsWith(".test.ts") ||
+    file.endsWith(".test.js") ||
+    file.endsWith(".spec.ts") ||
+    file.includes("/test/") ||
+    file.includes("/tests/") ||
+    file.includes("__tests__")
   ) {
     return "test"
   }
@@ -143,9 +151,9 @@ export const roleForFile = (file: string): FileRole => {
 }
 
 const roleGuidance: Record<FileRole, string | undefined> = {
-  test:
-    "This is a test file: environment-variable gating, async test callbacks, and console output for debugging failures are normal and acceptable. Judge business-logic rules leniently here.",
-  config: "This is a config file: judge it against the rule only if the rule clearly applies to configuration.",
+  test: "This is a test file: environment-variable gating, async test callbacks, and console output for debugging failures are normal and acceptable. Judge business-logic rules leniently here.",
+  config:
+    "This is a config file: judge it against the rule only if the rule clearly applies to configuration.",
   docs: "This is documentation: code-style rules do not apply unless the rule says so.",
   source: undefined,
 }

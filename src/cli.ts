@@ -153,9 +153,11 @@ const review = Command.make(
         Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
         Effect.catchTag("JevError", (e) =>
           Effect.sync(() => {
-            console.log(`::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`)
+            console.log(
+              `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
+            )
             return [] as const
-          })
+          }),
         ),
       )
       if (config.format === "json") {
