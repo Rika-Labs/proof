@@ -8,7 +8,7 @@ const ServerLive = ProofToolkitLive.pipe(
   Layer.provide(
     McpServer.layerStdio({
       name: "proof",
-      version: "0.3.0",
+      version: "0.4.0",
       protocols: [McpProtocol.v2025_11_25, McpProtocol.v2025_06_18, McpProtocol.v2025_03_26],
     }),
   ),

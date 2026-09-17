@@ -44,7 +44,7 @@ Three rule kinds, one per Jev primitive:
 - `Rule.choice` — classifiers over up to 255 options (`pass | comment | request-changes`).
 - `Rule.score` — gradients over 2–10 ordered levels (readability, risk).
 
-Every rule carries `severity` (`comment` | `request-changes`) and a `threshold`. Confidence policy: `<0.5` skip, `0.5–0.75` nit, `>=0.75` flag, `>=0.85 + request-changes` block.
+Every rule carries `severity` (`comment` | `request-changes`) and a `threshold`, plus optional `include` / `exclude` globs to scope which files it applies to (`**/src/**/*.ts`, `**/*.test.ts`). Confidence policy: `<0.5` skip, `0.5–0.75` nit, `>=0.75` flag, `>=0.85 + request-changes` block.
 
 ## 2. Enforce it
 
@@ -94,14 +94,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: Rika-Labs/proof@v0.3.0
+      - uses: Rika-Labs/proof@v0.4.0
         with:
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
           rules: ./proof.rules.ts
 ```
 
 ```yaml
-- uses: Rika-Labs/proof@v0.3.0
+- uses: Rika-Labs/proof@v0.4.0
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
     rules: ./proof.rules.ts

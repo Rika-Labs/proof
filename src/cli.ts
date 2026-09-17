@@ -339,4 +339,4 @@ const CliLive = Layer.mergeAll(
   NodeChildProcessSpawner.layer,
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 
-Command.run(cli, { version: "0.3.0" }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)
+Command.run(cli, { version: "0.4.0" }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)
