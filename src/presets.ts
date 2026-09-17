@@ -20,7 +20,9 @@ export const effectStrict = [
     exclude: ["**/*.test.ts", "**/*.spec.ts"],
     statement: `Do not leak Promise or async-await into Effect graphs. Flag async functions returning Promise, await inside Effect.gen, or new Promise. Pass Effect.tryPromise, Effect.promise, Effect.sleep instead of setTimeout, and HttpClient instead of raw fetch.`,
     examples: {
-      violate: [`export async function login(e: string) { const res = await fetch("/x"); return res.json() }`],
+      violate: [
+        `export async function login(e: string) { const res = await fetch("/x"); return res.json() }`,
+      ],
       clean: [`Effect.tryPromise(() => fetch("/x"))`],
     },
   }),

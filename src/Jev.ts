@@ -128,10 +128,7 @@ export const layer = Layer.effect(
     )
     const model = yield* Config.String("TYPESAFE_MODEL").pipe(Config.withDefault("jev-latest"))
 
-    const decodeAnswer = (
-      id: string,
-      res: SystemOneResponse,
-    ): Effect.Effect<Answer, JevError> =>
+    const decodeAnswer = (id: string, res: SystemOneResponse): Effect.Effect<Answer, JevError> =>
       Effect.gen(function* () {
         const ans = res.answers[id]
         if (ans === undefined) {
@@ -144,7 +141,11 @@ export const layer = Layer.effect(
           typeof ans.probabilities === "object" &&
           ans.probabilities !== null
         ) {
-          return { choice: ans.choice, confidence: ans.confidence, probabilities: ans.probabilities } as const
+          return {
+            choice: ans.choice,
+            confidence: ans.confidence,
+            probabilities: ans.probabilities,
+          } as const
         }
         if (
           typeof ans.score === "number" &&
@@ -170,9 +171,10 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const wire: Record<string, unknown> = {}
           for (const [id, q] of Object.entries(questions)) {
-            wire[id] = q.type === "noul" && q.criteria === undefined
-              ? { type: "noul", instructions: q.instructions }
-              : { type: q.type, instructions: q.instructions, criteria: q.criteria }
+            wire[id] =
+              q.type === "noul" && q.criteria === undefined
+                ? { type: "noul", instructions: q.instructions }
+                : { type: q.type, instructions: q.instructions, criteria: q.criteria }
           }
           const res = yield* callSystemOne(endpoint, apiKey, model, state, wire)
           const out: Record<string, Answer> = {}
@@ -181,17 +183,12 @@ export const layer = Layer.effect(
         }),
       askNoul: (state, instructions, criteria) =>
         Effect.gen(function* () {
-          const res = yield* callSystemOne(
-            endpoint,
-            apiKey,
-            model,
-            state,
-            {
-              q: criteria === undefined
+          const res = yield* callSystemOne(endpoint, apiKey, model, state, {
+            q:
+              criteria === undefined
                 ? { type: "noul", instructions }
                 : { type: "noul", instructions, criteria },
-            },
-          )
+          })
           const ans = res.answers["q"]
           if (ans === undefined || typeof ans.noul !== "number") {
             return yield* new JevError({

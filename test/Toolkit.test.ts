@@ -10,7 +10,7 @@ const stubViolates = Jev.of({
         Object.entries(questions).map(([id, q]) =>
           q.type === "noul"
             ? [id, { noul: 0.91 }]
-            : [id, { choice: "request_changes", confidence: 0.88, probabilities: {} }]
+            : [id, { choice: "request_changes", confidence: 0.88, probabilities: {} }],
         ),
       ),
     ),
@@ -27,7 +27,7 @@ const stubClean = Jev.of({
         Object.entries(questions).map(([id, q]) =>
           q.type === "noul"
             ? [id, { noul: 0.05 }]
-            : [id, { choice: "pass", confidence: 0.95, probabilities: {} }]
+            : [id, { choice: "pass", confidence: 0.95, probabilities: {} }],
         ),
       ),
     ),

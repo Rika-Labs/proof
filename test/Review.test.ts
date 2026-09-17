@@ -73,13 +73,21 @@ describe("splitDiff", () => {
 
 describe("noulQuestion", () => {
   it("omits criteria without examples", () => {
-    const q = noulQuestion(noul({ id: "x", statement: "s" }), { file: "a.ts", diff: "+1", targetLine: 1 })
+    const q = noulQuestion(noul({ id: "x", statement: "s" }), {
+      file: "a.ts",
+      diff: "+1",
+      targetLine: 1,
+    })
     expect(q.criteria).toBeUndefined()
   })
 
   it("builds structured criteria with examples", () => {
     const q = noulQuestion(
-      noul({ id: "x", statement: "No throw", examples: { violate: ["throw x"], clean: ["Effect.fail"] } }),
+      noul({
+        id: "x",
+        statement: "No throw",
+        examples: { violate: ["throw x"], clean: ["Effect.fail"] },
+      }),
       { file: "a.ts", diff: "+1", targetLine: 1 },
     )
     expect(q.criteria).toMatchObject({
@@ -98,7 +106,9 @@ describe("checkHunkBatched", () => {
         return Effect.succeed(
           Object.fromEntries(
             Object.entries(questions).map(([id, q]) =>
-              q.type === "noul" ? [id, { noul: 0.9 }] : [id, { choice: "b", confidence: 0.9, probabilities: {} }]
+              q.type === "noul"
+                ? [id, { noul: 0.9 }]
+                : [id, { choice: "b", confidence: 0.9, probabilities: {} }],
             ),
           ),
         )
@@ -111,7 +121,12 @@ describe("checkHunkBatched", () => {
       checkHunkBatched(
         [
           noul({ id: "n", statement: "s", threshold: 0.5 }),
-          choice({ id: "c", instructions: "pick", options: { a: "first", b: "second" }, threshold: 0.5 }),
+          choice({
+            id: "c",
+            instructions: "pick",
+            options: { a: "first", b: "second" },
+            threshold: 0.5,
+          }),
         ],
         { file: "a.ts", diff: "+x", targetLine: 3 },
       ).pipe(Effect.provideService(Jev, stub)),
@@ -141,7 +156,7 @@ describe("reviewDiff with stubbed Jev", () => {
           Object.entries(questions).map(([id, q]) =>
             q.type === "noul"
               ? [id, { noul: 0.95 }]
-              : [id, { choice: "request_changes", confidence: 0.9, probabilities: {} }]
+              : [id, { choice: "request_changes", confidence: 0.9, probabilities: {} }],
           ),
         ),
       ),

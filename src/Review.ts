@@ -84,7 +84,10 @@ type CheckError = JevError
 export const noulQuestion = (
   rule: NoulRule,
   hunk: Hunk,
-): { readonly instructions: string; readonly criteria: { readonly true: unknown; readonly false: unknown } | undefined } => {
+): {
+  readonly instructions: string
+  readonly criteria: { readonly true: unknown; readonly false: unknown } | undefined
+} => {
   const instructions = withFileContext(
     `Does this diff violate the following rule? Rule: ${rule.statement}`,
     hunk.file,
@@ -168,9 +171,10 @@ export const checkHunkBatched = (
     for (const rule of judged) {
       if (rule._tag === "Noul") {
         const q = noulQuestion(rule, hunk)
-        questions[rule.id] = q.criteria === undefined
-          ? { type: "noul", instructions: q.instructions }
-          : { type: "noul", instructions: q.instructions, criteria: q.criteria }
+        questions[rule.id] =
+          q.criteria === undefined
+            ? { type: "noul", instructions: q.instructions }
+            : { type: "noul", instructions: q.instructions, criteria: q.criteria }
       } else if (rule._tag === "Choice") {
         questions[rule.id] = {
           type: "choice",
