@@ -46,17 +46,19 @@ describe("comment markers", () => {
 
 describe("partitionNew", () => {
   it("skips already-commented path+line+rule", () => {
-    const { fresh, skipped } = partitionNew([flag(), flag({ ruleId: "other", line: 13 })], [
-      { path: "src/A.ts", line: 12, body: `note\n${markerFor("effect/no-throw")}` },
-    ])
+    const { fresh, skipped } = partitionNew(
+      [flag(), flag({ ruleId: "other", line: 13 })],
+      [{ path: "src/A.ts", line: 12, body: `note\n${markerFor("effect/no-throw")}` }],
+    )
     expect(fresh.map((f) => f.ruleId)).toEqual(["other"])
     expect(skipped).toBe(1)
   })
 
   it("keeps same rule on a different line", () => {
-    const { fresh } = partitionNew([flag({ line: 14 })], [
-      { path: "src/A.ts", line: 12, body: markerFor("effect/no-throw") },
-    ])
+    const { fresh } = partitionNew(
+      [flag({ line: 14 })],
+      [{ path: "src/A.ts", line: 12, body: markerFor("effect/no-throw") }],
+    )
     expect(fresh).toHaveLength(1)
   })
 })

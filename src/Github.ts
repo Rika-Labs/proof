@@ -54,14 +54,16 @@ const api = (
           | Array<unknown>
           | null
         if (!res.ok) {
-          const message = json !== null && !Array.isArray(json) && typeof json.message === "string"
-            ? json.message
-            : `GitHub ${res.status}`
+          const message =
+            json !== null && !Array.isArray(json) && typeof json.message === "string"
+              ? json.message
+              : `GitHub ${res.status}`
           throw new GithubError({ status: res.status, message })
         }
         return json
       }),
-    catch: (e) => (e instanceof GithubError ? e : new GithubError({ status: undefined, message: String(e) })),
+    catch: (e) =>
+      e instanceof GithubError ? e : new GithubError({ status: undefined, message: String(e) }),
   })
 
 const listInlineComments = (
@@ -92,21 +94,22 @@ export const partitionNew = (
     (flag) =>
       !existing.some(
         (c) =>
-          c.path === flag.file && c.line === flag.line &&
-          typeof c.body === "string" && c.body.includes(markerFor(flag.ruleId)),
+          c.path === flag.file &&
+          c.line === flag.line &&
+          typeof c.body === "string" &&
+          c.body.includes(markerFor(flag.ruleId)),
       ),
   )
   return { fresh, skipped: commentable.length - fresh.length }
 }
 
-const postOne = (
-  token: string,
-  target: PullTarget,
-  flag: Flag,
-): Effect.Effect<void, GithubError> =>
+const postOne = (token: string, target: PullTarget, flag: Flag): Effect.Effect<void, GithubError> =>
   Effect.gen(function* () {
     if (flag.line === undefined) {
-      return yield* new GithubError({ status: undefined, message: `No target line for ${flag.ruleId}` })
+      return yield* new GithubError({
+        status: undefined,
+        message: `No target line for ${flag.ruleId}`,
+      })
     }
     yield* api(token, `/repos/${target.owner}/${target.repo}/pulls/${target.pull}/comments`, {
       method: "POST",
@@ -140,16 +143,24 @@ export const postInlineComments = (
   })
 
 /** owner/repo from $GITHUB_REPOSITORY, PR number from $GITHUB_REF (refs/pull/N/merge). */
-export const targetFromEnv = (
-  overrides?: { readonly repo?: string; readonly pr?: number; readonly commit?: string },
-): PullTarget | undefined => {
+export const targetFromEnv = (overrides?: {
+  readonly repo?: string
+  readonly pr?: number
+  readonly commit?: string
+}): PullTarget | undefined => {
   const repoRaw = overrides?.repo ?? process.env["GITHUB_REPOSITORY"] ?? ""
   const [owner, repo] = repoRaw.split("/")
   const ref = process.env["GITHUB_REF"] ?? ""
   const prMatch = /refs\/pull\/(\d+)\//.exec(ref)
   const pull = overrides?.pr ?? (prMatch?.[1] !== undefined ? Number(prMatch[1]) : NaN)
   const commit = overrides?.commit ?? process.env["GITHUB_SHA"] ?? ""
-  if (owner === undefined || repo === undefined || owner === "" || Number.isNaN(pull) || commit === "") {
+  if (
+    owner === undefined ||
+    repo === undefined ||
+    owner === "" ||
+    Number.isNaN(pull) ||
+    commit === ""
+  ) {
     return undefined
   }
   return { owner, repo, pull, commit }

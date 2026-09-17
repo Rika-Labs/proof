@@ -1,11 +1,18 @@
 #!/usr/bin/env bun
-import { NodeChildProcessSpawner, NodeFileSystem, NodePath, NodeRuntime, NodeStdio, NodeTerminal } from "@effect/platform-node"
+import {
+  NodeChildProcessSpawner,
+  NodeFileSystem,
+  NodePath,
+  NodeRuntime,
+  NodeStdio,
+  NodeTerminal,
+} from "@effect/platform-node"
 import { Data, Effect, Layer } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
-import { layer as JevLive, MissingApiKey } from "./Jev.ts"
+import { layer as JevLive } from "./Jev.ts"
 import { effectStrict } from "./presets.ts"
-import { EmptyDiff, reviewDiff, splitDiff } from "./Review.ts"
+import { reviewDiff, splitDiff } from "./Review.ts"
 
 export class BlockingFlags extends Data.TaggedError("BlockingFlags")<{
   readonly count: number
@@ -23,10 +30,12 @@ const gitDiff = (base: string, head: string): Effect.Effect<string, GithubError>
   Effect.try({
     try: () => {
       const proc = Bun.spawnSync(["git", "diff", `${base}...${head}`, "--", "."])
-      if (proc.exitCode !== 0) throw new Error(`git diff failed: ${proc.stderr.toString().slice(0, 200)}`)
+      if (proc.exitCode !== 0)
+        throw new Error(`git diff failed: ${proc.stderr.toString().slice(0, 200)}`)
       return proc.stdout.toString()
     },
-    catch: (e) => (e instanceof GithubError ? e : new GithubError({ status: undefined, message: String(e) })),
+    catch: (e) =>
+      e instanceof GithubError ? e : new GithubError({ status: undefined, message: String(e) }),
   })
 
 const parseConfidence = (raw: string): Effect.Effect<number, BadArgs> => {
@@ -61,7 +70,9 @@ const review = Command.make(
       Flag.withDefault("annotations"),
     ),
     comment: Flag.Boolean("comment").pipe(
-      Flag.withDescription("Post inline PR comments on flagged lines (needs --repo/--pr/--commit or GITHUB_* env + GITHUB_TOKEN)"),
+      Flag.withDescription(
+        "Post inline PR comments on flagged lines (needs --repo/--pr/--commit or GITHUB_* env + GITHUB_TOKEN)",
+      ),
       Flag.withDefault(false),
     ),
     repo: Flag.String("repo").pipe(
@@ -87,7 +98,11 @@ const review = Command.make(
       if (config.failOn !== "comment" && config.failOn !== "request-changes") {
         return yield* new BadArgs({ message: `--fail-on must be comment or request-changes` })
       }
-      if (config.format !== "annotations" && config.format !== "json" && config.format !== "summary") {
+      if (
+        config.format !== "annotations" &&
+        config.format !== "json" &&
+        config.format !== "summary"
+      ) {
         return yield* new BadArgs({ message: `--format must be annotations, json, or summary` })
       }
       const diff = yield* gitDiff(config.base, config.head)
@@ -108,14 +123,18 @@ const review = Command.make(
         const body = `### proof review\n\n| rule | location | conf | severity |\n|---|---|---|---|\n${rows.join("\n") || "| — | no flags | — | — |"}`
         const summaryFile = process.env["GITHUB_STEP_SUMMARY"]
         if (summaryFile !== undefined && summaryFile !== "") {
-          yield* Effect.promise(() => Bun.write(Bun.file(summaryFile, { type: "text/markdown" }), `${body}\n`))
+          yield* Effect.promise(() =>
+            Bun.write(Bun.file(summaryFile, { type: "text/markdown" }), `${body}\n`),
+          )
         } else {
           console.log(body)
         }
       } else {
         for (const f of flags) {
           const level = f.severity === "request-changes" ? "error" : "warning"
-          console.log(`::${level} file=${f.file}${f.line !== undefined ? `,line=${f.line}` : ""}::proof ${f.ruleId} (${f.confidence.toFixed(2)}): ${f.detail}`)
+          console.log(
+            `::${level} file=${f.file}${f.line !== undefined ? `,line=${f.line}` : ""}::proof ${f.ruleId} (${f.confidence.toFixed(2)}): ${f.detail}`,
+          )
         }
       }
 
@@ -127,21 +146,29 @@ const review = Command.make(
         })
         if (target === undefined) {
           return yield* new MissingTarget({
-            message: "Inline comments need --repo owner/repo, --pr N, --commit SHA (or GITHUB_REPOSITORY / GITHUB_REF / GITHUB_SHA)",
+            message:
+              "Inline comments need --repo owner/repo, --pr N, --commit SHA (or GITHUB_REPOSITORY / GITHUB_REF / GITHUB_SHA)",
           })
         }
         if (config.dryRun) {
-          for (const f of flags.filter((f) => f.line !== undefined)) {
-            console.log(`would comment ${target.owner}/${target.repo}#${target.pull} ${f.file}:${f.line} [${f.ruleId}]`)
+          const lined = flags.filter((f) => f.line !== undefined)
+          for (const flag of lined) {
+            console.log(
+              `would comment ${target.owner}/${target.repo}#${target.pull} ${flag.file}:${flag.line} [${flag.ruleId}]`,
+            )
           }
-          console.log(`would skip ${flags.filter((f) => f.line === undefined).length} flag(s) without a target line`)
+          console.log(
+            `would skip ${flags.filter((f) => f.line === undefined).length} flag(s) without a target line`,
+          )
         } else {
           const token = process.env["GITHUB_TOKEN"] ?? ""
           if (token === "") {
             return yield* new MissingTarget({ message: "Inline comments need GITHUB_TOKEN" })
           }
           const result = yield* postInlineComments(token, target, flags)
-          console.log(`proof: posted ${result.posted}, skipped ${result.skipped} (already commented), ${result.noLine} without a target line`)
+          console.log(
+            `proof: posted ${result.posted}, skipped ${result.skipped} (already commented), ${result.noLine} without a target line`,
+          )
         }
       }
 
@@ -158,8 +185,10 @@ const cli = Command.make("proof").pipe(
   Command.withDescription("Plain-english code review judged by Jev"),
 )
 
-const CliLive = Layer.mergeAll(NodeTerminal.layer, NodeStdio.layer, NodeChildProcessSpawner.layer).pipe(
-  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
-)
+const CliLive = Layer.mergeAll(
+  NodeTerminal.layer,
+  NodeStdio.layer,
+  NodeChildProcessSpawner.layer,
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 
 Command.run(cli, { version: "0.2.0" }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)

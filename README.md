@@ -101,10 +101,10 @@ With options:
 - uses: Rika-Labs/proof@v0.2.0
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
-    fail-on: request-changes   # or: comment
+    fail-on: request-changes # or: comment
     min-confidence: "0.85"
-    comment: "true"            # inline PR comments on flagged lines
-    format: annotations        # or: json, summary
+    comment: "true" # inline PR comments on flagged lines
+    format: annotations # or: json, summary
 ```
 
 Or call the CLI directly (any pipeline with Bun — GitLab CI, Buildkite, pre-push hooks):
