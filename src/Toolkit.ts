@@ -45,6 +45,7 @@ export const ProofReviewDiff = Tool.make("proof_review_diff", {
         confidence: Schema.Number,
         severity: Schema.String,
         detail: Schema.String,
+        line: Schema.optional(Schema.Number),
       }),
     ),
     hunks: Schema.Number,
@@ -116,6 +117,7 @@ export const handleProofReviewDiff = (params: {
       readonly confidence: number
       readonly severity: string
       readonly detail: string
+      readonly line?: number
     }>
     readonly hunks: number
     readonly error?: string
@@ -133,7 +135,14 @@ export const handleProofReviewDiff = (params: {
           )
     const flags = yield* reviewDiff(rules, diff)
     return {
-      flags: flags.map((flag) => ({ ...flag })),
+      flags: flags.map((flag) => ({
+        ruleId: flag.ruleId,
+        file: flag.file,
+        confidence: flag.confidence,
+        severity: flag.severity,
+        detail: flag.detail,
+        ...(flag.line === undefined ? {} : { line: flag.line }),
+      })),
       hunks: splitDiff(diff).length,
     }
   }).pipe(

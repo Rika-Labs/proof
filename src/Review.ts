@@ -6,6 +6,8 @@ export interface Hunk {
   readonly file: string
   readonly diff: string
   readonly content?: string
+  /** First added line number in the new file, for inline review comments. Absent for pure deletions. */
+  readonly targetLine: number | undefined
 }
 
 export interface Flag {
@@ -14,11 +16,39 @@ export interface Flag {
   readonly confidence: number
   readonly severity: Rule["severity"]
   readonly detail: string
+  readonly line: number | undefined
 }
 
 export class EmptyDiff extends Data.TaggedError("EmptyDiff")<{
   readonly message: string
 }> {}
+
+/** First added line number (new-file side) in a unified diff chunk. */
+export const firstAddedLine = (chunk: string): number | undefined => {
+  const lines = chunk.split("\n")
+  let newLine = 0
+  let inHunk = false
+  for (const line of lines) {
+    const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line)
+    if (header?.[1] !== undefined) {
+      newLine = Number(header[1])
+      inHunk = true
+      continue
+    }
+    if (!inHunk) continue
+    if (line.startsWith("+") && !line.startsWith("+++")) return newLine
+    if (line.startsWith(" ")) newLine += 1
+    else if (line.startsWith("-") && !line.startsWith("---")) {
+      // deletion: new-file line number unchanged
+    } else if (line.startsWith("\\")) {
+      // "\ No newline at end of file": ignore
+    } else if (line.trim() === "") {
+      // tolerant: blank line counts as context only inside a hunk body
+      newLine += 1
+    }
+  }
+  return undefined
+}
 
 /** Split a unified diff into per-file hunks. Falls back to one hunk per file header. */
 export const splitDiff = (diff: string): ReadonlyArray<Hunk> => {
@@ -28,7 +58,7 @@ export const splitDiff = (diff: string): ReadonlyArray<Hunk> => {
   if (headers.length === 0) {
     const trimmed = diff.trim()
     if (trimmed.length === 0) return []
-    return [{ file: "unknown", diff: trimmed }]
+    return [{ file: "unknown", diff: trimmed, targetLine: firstAddedLine(trimmed) }]
   }
   for (let i = 0; i < headers.length; i++) {
     const match = headers[i]
@@ -36,7 +66,7 @@ export const splitDiff = (diff: string): ReadonlyArray<Hunk> => {
     const next = headers[i + 1]
     const chunk = diff.slice(match.index, next?.index).trim()
     const file = match[2] ?? match[1] ?? "unknown"
-    if (chunk.length > 0) files.push({ file, diff: chunk })
+    if (chunk.length > 0) files.push({ file, diff: chunk, targetLine: firstAddedLine(chunk) })
   }
   return files
 }
@@ -57,6 +87,7 @@ const checkNoul = (rule: NoulRule, hunk: Hunk): Effect.Effect<Flag | null, Check
         confidence: ans.noul,
         severity: rule.severity,
         detail: `Violates ${rule.id} (noul ${ans.noul.toFixed(2)})`,
+        line: hunk.targetLine,
       } satisfies Flag
     }
     return null
@@ -78,6 +109,7 @@ const checkChoice = (rule: ChoiceRule, hunk: Hunk): Effect.Effect<Flag | null, C
         confidence: ans.confidence,
         severity: rule.severity,
         detail: `${rule.id}: chose ${ans.choice} (conf ${ans.confidence.toFixed(2)})`,
+        line: hunk.targetLine,
       } satisfies Flag
     }
     return null

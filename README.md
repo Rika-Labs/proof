@@ -23,7 +23,7 @@ Any MCP client (OpenCode, Claude Code, Cursor). Requires Bun on `PATH`.
 
 ```sh
 export TYPESAFE_API_KEY=...
-bunx @rikalabs/proof
+bunx --package @rikalabs/proof proof-mcp
 ```
 
 OpenCode (`~/.config/opencode/opencode.json` or project `opencode.json`):
@@ -33,7 +33,7 @@ OpenCode (`~/.config/opencode/opencode.json` or project `opencode.json`):
   "mcp": {
     "proof": {
       "type": "local",
-      "command": ["bunx", "@rikalabs/proof"],
+      "command": ["bunx", "--package", "@rikalabs/proof", "proof-mcp"],
       "environment": { "TYPESAFE_API_KEY": "{env:TYPESAFE_API_KEY}" }
     }
   }
@@ -47,7 +47,7 @@ Claude Code (`~/.claude.json` or `.mcp.json`):
   "mcpServers": {
     "proof": {
       "command": "bunx",
-      "args": ["@rikalabs/proof"],
+      "args": ["--package", "@rikalabs/proof", "proof-mcp"],
       "env": { "TYPESAFE_API_KEY": "…" }
     }
   }
@@ -74,7 +74,7 @@ Confidence policy: `<0.5` skip, `0.5–0.75` nit, `>=0.75` flag, `>=0.85 + reque
 
 ## Use in CI / GitHub Actions
 
-No action to install — call the MCP tools from any job with Bun. Fails the build only on `request-changes` flags at confidence `>= 0.85`:
+Easiest — the composite action (inline comments on by default for PRs):
 
 ```yaml
 # .github/workflows/proof.yml
@@ -84,64 +84,58 @@ on: [pull_request]
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-      - run: bun add @rikalabs/proof
-        env:
-          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-      - name: Review PR diff
-        env:
-          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-          BASE_REF: ${{ github.event.pull_request.base.sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.sha }}
-        run: |
-          bun -e '
-            import { Effect } from "effect"
-            import { layer as JevLive } from "@rikalabs/proof/src/Jev.ts"
-            import { effectStrict } from "@rikalabs/proof/src/presets.ts"
-            import { reviewDiff, splitDiff } from "@rikalabs/proof/src/Review.ts"
-            import { $ } from "bun"
+      - uses: Rika-Labs/proof@v0.2.0
+        with:
+          typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
+```
 
-            const diff = await $`git diff ${process.env.BASE_REF} ${process.env.HEAD_REF}`.text()
-            if (splitDiff(diff).length === 0) {
-              console.log("proof: no hunks, skipping")
-              process.exit(0)
-            }
-            const flags = await Effect.runPromise(
-              reviewDiff(effectStrict, diff).pipe(Effect.provide(JevLive)),
-            )
-            for (const f of flags) {
-              console.log(`::${f.severity === "request-changes" ? "error" : "warning"} file=${f.file}::proof ${f.ruleId} (${f.confidence.toFixed(2)}): ${f.detail}`)
-            }
-            const blocking = flags.filter((f) => f.severity === "request-changes" && f.confidence >= 0.85)
-            if (blocking.length > 0) {
-              console.log(`proof: ${blocking.length} blocking flag(s)`)
-              process.exit(1)
-            }
-            console.log(`proof: ${flags.length} flag(s), none blocking`)
-          '
+With options:
+
+```yaml
+- uses: Rika-Labs/proof@v0.2.0
+  with:
+    typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
+    fail-on: request-changes   # or: comment
+    min-confidence: "0.85"
+    comment: "true"            # inline PR comments on flagged lines
+    format: annotations        # or: json, summary
+```
+
+Or call the CLI directly (any pipeline with Bun — GitLab CI, Buildkite, pre-push hooks):
+
+```sh
+export TYPESAFE_API_KEY=...
+bunx --package @rikalabs/proof proof review \
+  --base origin/main --head HEAD \
+  --comment --repo owner/repo --pr 123 --commit <head-sha>
+```
+
+```sh
+proof review --help   # all flags
+```
+
+Minimal pre-push hook (`.git/hooks/pre-push`):
+
+```sh
+#!/bin/sh
+export TYPESAFE_API_KEY=...
+bunx --package @rikalabs/proof proof review --base origin/main --head HEAD
 ```
 
 Notes:
 
 - Add `TYPESAFE_API_KEY` under repo Settings → Secrets → Actions first.
-- Reviews only changed lines (diff hunks), never the whole codebase.
+- Inline comments need `permissions: pull-requests: write` (or a token with PR write).
+- Reviews only changed lines (diff hunks), never the whole codebase. Comments land on the first added line of each violating hunk, deduped by an HTML marker — re-runs never double-post.
+- Fails the job only on flags at `--fail-on` severity with confidence `>= --min-confidence`.
 - Tune per rule in code (`threshold`, `severity`) rather than in YAML.
-- Jev outages surface as `{ flags: [], error }` and warn instead of failing — the workflow above treats an empty flag set as pass; gate on `error` too if you prefer fail-closed.
-
-## Use in any pipeline
-
-The same script works anywhere Bun runs (GitLab CI, Buildkite, pre-push hooks). Minimal pre-push hook (`.git/hooks/pre-push`):
-
-```sh
-#!/bin/sh
-export TYPESAFE_API_KEY=...
-diff=$(git diff origin/main...HEAD)
-bun -e '/* same review snippet as above, threshold as you like */'
-```
+- Jev outages warn instead of failing — gate on the `error` field (CLI prints it, MCP returns it) if you prefer fail-closed.
 
 ## Define rules in TypeScript
 

@@ -1,0 +1,70 @@
+name: proof review
+description: Review a PR diff with plain-english rules judged by Jev, with optional inline comments
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  typesafe-api-key:
+    description: TypeSafe API key for Jev
+    required: true
+  github-token:
+    description: Token for posting inline PR comments (default github.token)
+    required: false
+    default: ${{ github.token }}
+  version:
+    description: proof package version to run (default matches the action ref)
+    required: false
+    default: ""
+  base:
+    description: Git base ref for the diff
+    required: false
+    default: ""
+  head:
+    description: Git head ref for the diff
+    required: false
+    default: ""
+  fail-on:
+    description: Severity that fails the job (comment or request-changes)
+    required: false
+    default: request-changes
+  min-confidence:
+    description: Minimum confidence 0..1 for a flag to fail the job
+    required: false
+    default: "0.85"
+  comment:
+    description: Post inline PR comments on flagged lines (true/false)
+    required: false
+    default: "true"
+  format:
+    description: Output format (annotations, json, summary)
+    required: false
+    default: annotations
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+    - shell: bash
+      env:
+        TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        REF="${{ inputs.version }}"
+        if [ -z "$REF" ]; then REF="${{ github.action_ref }}"; fi
+        BASE="${{ inputs.base }}"
+        if [ -z "$BASE" ]; then BASE="${{ github.event.pull_request.base.sha }}"; fi
+        HEAD="${{ inputs.head }}"
+        if [ -z "$HEAD" ]; then HEAD="${{ github.event.pull_request.head.sha }}"; fi
+        COMMENT="${{ inputs.comment }}"
+        if [ "${{ github.event_name }}" != "pull_request" ]; then COMMENT="false"; fi
+        bunx --package @rikalabs/proof@${REF} proof review \
+          --base "$BASE" \
+          --head "$HEAD" \
+          --fail-on "${{ inputs.fail-on }}" \
+          --min-confidence "${{ inputs.min-confidence }}" \
+          --format "${{ inputs.format }}" \
+          $([ "$COMMENT" = "true" ] && echo "--comment") \
+          --repo "${{ github.repository }}" \
+          --pr "${{ github.event.pull_request.number }}" \
+          --commit "$HEAD"

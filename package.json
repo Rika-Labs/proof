@@ -1,7 +1,7 @@
 {
   "name": "@rikalabs/proof",
-  "version": "0.1.0",
-  "description": "Plain-english rules for PRs and code review, judged by Jev. Local-first MCP — bring your own TYPESAFE_API_KEY.",
+  "version": "0.2.0",
+  "description": "Plain-english rules for PRs and code review, judged by Jev. Local-first MCP \u2014 bring your own TYPESAFE_API_KEY.",
   "license": "MIT",
   "author": "Rika Labs",
   "repository": {
@@ -9,6 +9,7 @@
     "url": "https://github.com/Rika-Labs/proof.git"
   },
   "bin": {
+    "proof": "./src/cli.ts",
     "proof-mcp": "./src/server.ts"
   },
   "files": [
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@effect/vitest": "4.0.0-rc.115",
     "@types/node": "24.12.2",
+    "bun-types": "^1.4.2",
     "oxfmt": "0.66.0",
     "oxlint": "1.78.0",
     "typescript": "7.0.2",
