@@ -9,10 +9,12 @@ import {
 } from "@effect/platform-node"
 import { Data, Effect, Layer } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
+import { resolve } from "node:path"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
 import { layer as JevLive } from "./Jev.ts"
 import { effectStrict } from "./presets.ts"
 import { reviewDiff, splitDiff } from "./Review.ts"
+import { type Rule } from "./Rule.ts"
 
 export class BlockingFlags extends Data.TaggedError("BlockingFlags")<{
   readonly count: number
@@ -45,6 +47,36 @@ const parseConfidence = (raw: string): Effect.Effect<number, BadArgs> => {
   }
   return Effect.succeed(value)
 }
+
+export const isRuleArray = (value: unknown): value is ReadonlyArray<Rule> =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every(
+    (item): item is Rule =>
+      typeof item === "object" &&
+      item !== null &&
+      (item as { _tag?: unknown })._tag !== undefined &&
+      ["Noul", "Choice", "Score"].includes((item as { _tag: unknown })._tag as string) &&
+      typeof (item as { id?: unknown }).id === "string",
+  )
+
+/** Load a rule file (TS module default-exporting a Rule[]) or fall back to the built-in preset. */
+export const loadRules = (path: string): Effect.Effect<ReadonlyArray<Rule>, BadArgs> =>
+  Effect.gen(function* () {
+    if (path === "") return effectStrict
+    const mod = (yield* Effect.tryPromise({
+      try: () => import(resolve(process.cwd(), path)) as Promise<{ default?: unknown }>,
+      catch: (e) =>
+        new BadArgs({ message: `--rules: cannot load ${path}: ${String(e).slice(0, 200)}` }),
+    })) as { default?: unknown }
+    const rules = (mod as { default?: unknown }).default ?? (mod as { rules?: unknown }).rules
+    if (!isRuleArray(rules)) {
+      return yield* new BadArgs({
+        message: `--rules: ${path} must default-export a non-empty Rule[] (see proof.rules.ts example)`,
+      })
+    }
+    return rules
+  })
 
 const review = Command.make(
   "review",
@@ -91,6 +123,12 @@ const review = Command.make(
       Flag.withDescription("Print what would be commented without calling GitHub"),
       Flag.withDefault(false),
     ),
+    rules: Flag.String("rules").pipe(
+      Flag.withDescription(
+        "Path to a rule file (TS module default-exporting Rule[]). Default: built-in Effect preset",
+      ),
+      Flag.withDefault(""),
+    ),
   },
   (config) =>
     Effect.gen(function* () {
@@ -105,12 +143,13 @@ const review = Command.make(
       ) {
         return yield* new BadArgs({ message: `--format must be annotations, json, or summary` })
       }
+      const rules = yield* loadRules(config.rules)
       const diff = yield* gitDiff(config.base, config.head)
       if (splitDiff(diff).length === 0) {
         console.log("proof: no hunks, skipping")
         return
       }
-      const flags = yield* reviewDiff(effectStrict, diff).pipe(
+      const flags = yield* reviewDiff(rules, diff).pipe(
         Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
       )
       if (config.format === "json") {

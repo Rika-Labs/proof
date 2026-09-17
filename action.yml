@@ -36,6 +36,10 @@ inputs:
     description: Post inline PR comments on flagged lines (true/false)
     required: false
     default: "true"
+  rules:
+    description: Path to a rule file in the repo (TS module default-exporting Rule[]). Default is the built-in Effect preset
+    required: false
+    default: ""
   format:
     description: Output format (annotations, json, summary)
     required: false
@@ -58,7 +62,15 @@ runs:
         if [ -z "$HEAD" ]; then HEAD="${{ github.event.pull_request.head.sha }}"; fi
         COMMENT="${{ inputs.comment }}"
         if [ "${{ github.event_name }}" != "pull_request" ]; then COMMENT="false"; fi
+        RULES="${{ inputs.rules }}"
         bunx --package @rikalabs/proof@${REF} cli review \
+          --base "$BASE" \
+          --head "$HEAD" \
+          --fail-on "${{ inputs.fail-on }}" \
+          --min-confidence "${{ inputs.min-confidence }}" \
+          --format "${{ inputs.format }}" \
+          $([ "$COMMENT" = "true" ] && echo "--comment") \
+          $([ -n "$RULES" ] && echo "--rules $RULES") \
           --base "$BASE" \
           --head "$HEAD" \
           --fail-on "${{ inputs.fail-on }}" \
