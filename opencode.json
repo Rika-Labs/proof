@@ -3,7 +3,11 @@
   "mcp": {
     "proof": {
       "type": "local",
-      "command": ["bun", "/Users/dallenpyrah/Projects/rika-labs/proof/src/server.ts"],
+      "command": [
+        "bun",
+        "/Users/dallenpyrah/Projects/rika-labs/proof/src/cli.ts",
+        "mcp"
+      ],
       "environment": {
         "TYPESAFE_API_KEY": "{env:TYPESAFE_API_KEY}"
       }

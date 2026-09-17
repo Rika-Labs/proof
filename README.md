@@ -52,7 +52,7 @@ One lint command, locally or in CI. Reviews only changed lines, never the whole 
 
 ```sh
 # lint the current branch against your rule file
-bunx --package @rikalabs/proof cli review --base origin/main --head HEAD --rules ./proof.rules.ts
+bunx @rikalabs/proof review --base origin/main --head HEAD --rules ./proof.rules.ts
 ```
 
 ```sh
@@ -62,8 +62,8 @@ cli review --help # --fail-on, --min-confidence, --format annotations|json|summa
 Whole-repo lint works the same way — walks files like oxlint, judges 50-line windows, caches hits in `.proof/cache.json` so reruns only re-judge what changed:
 
 ```sh
-bunx --package @rikalabs/proof cli lint --rules ./proof.rules.ts
-bunx --package @rikalabs/proof cli lint packages src --rules ./proof.rules.ts
+bunx @rikalabs/proof lint --rules ./proof.rules.ts
+bunx @rikalabs/proof lint packages src --rules ./proof.rules.ts
 ```
 
 ```sh
@@ -75,7 +75,7 @@ Pre-push hook (`.git/hooks/pre-push`):
 ```sh
 #!/bin/sh
 export TYPESAFE_API_KEY=...
-bunx --package @rikalabs/proof cli review --base origin/main --head HEAD --rules ./proof.rules.ts
+bunx @rikalabs/proof review --base origin/main --head HEAD --rules ./proof.rules.ts
 ```
 
 GitHub Actions — the composite action (inline comments on by default for PRs):
@@ -94,14 +94,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: Rika-Labs/proof@v0.4.0
+      - uses: Rika-Labs/proof@v0.4.2
         with:
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
           rules: ./proof.rules.ts
 ```
 
 ```yaml
-- uses: Rika-Labs/proof@v0.4.0
+- uses: Rika-Labs/proof@v0.4.2
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
     rules: ./proof.rules.ts
@@ -120,7 +120,7 @@ Jev outages warn instead of failing (`{ flags: [], error }`) — gate on the err
 The same engine as a stdio MCP server — `proof_check` checks one hunk against one plain-english rule, no rule file needed:
 
 ```sh
-bunx --package @rikalabs/proof mcp
+bunx @rikalabs/proof mcp
 ```
 
 OpenCode (`opencode.json`):
@@ -130,7 +130,7 @@ OpenCode (`opencode.json`):
   "mcp": {
     "proof": {
       "type": "local",
-      "command": ["bunx", "--package", "@rikalabs/proof", "mcp"],
+      "command": ["bunx", "@rikalabs/proof", "mcp"],
       "environment": { "TYPESAFE_API_KEY": "{env:TYPESAFE_API_KEY}" }
     }
   }
@@ -144,7 +144,7 @@ Claude Code (`.mcp.json`):
   "mcpServers": {
     "proof": {
       "command": "bunx",
-      "args": ["--package", "@rikalabs/proof", "mcp"],
+      "args": ["@rikalabs/proof", "mcp"],
       "env": { "TYPESAFE_API_KEY": "…" }
     }
   }

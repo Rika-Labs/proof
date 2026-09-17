@@ -1,7 +1,7 @@
 {
   "name": "@rikalabs/proof",
-  "version": "0.4.1",
-  "description": "Plain-english rules for PRs and code review, judged by Jev. Local-first MCP — bring your own TYPESAFE_API_KEY.",
+  "version": "0.4.2",
+  "description": "Plain-english rules for PRs and code review, judged by Jev. Local-first MCP \u2014 bring your own TYPESAFE_API_KEY.",
   "license": "MIT",
   "author": "Rika Labs",
   "repository": {
@@ -9,8 +9,7 @@
     "url": "https://github.com/Rika-Labs/proof.git"
   },
   "bin": {
-    "cli": "./src/cli.ts",
-    "mcp": "./src/server.ts"
+    "proof": "./src/cli.ts"
   },
   "files": [
     "src",

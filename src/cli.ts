@@ -7,9 +7,11 @@ import {
   NodeStdio,
   NodeTerminal,
 } from "@effect/platform-node"
-import { Data, Effect, Layer } from "effect"
+import { Data, Effect, Layer, Logger } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { resolve } from "node:path"
+import { McpProtocol, McpServer } from "effect/unstable/ai"
+import { ProofToolkitLive } from "./Toolkit.ts"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
 import { layer as JevLive } from "./Jev.ts"
 import { collectFiles, lintFiles } from "./Lint.ts"
@@ -328,8 +330,26 @@ const lint = Command.make(
     }).pipe(Effect.provide(JevLive)),
 ).pipe(Command.withDescription("Lint whole files with plain-english rules judged by Jev"))
 
+const mcp = Command.make("mcp", {}, () =>
+  Effect.gen(function* () {
+    const server = ProofToolkitLive.pipe(
+      Layer.provide(
+        McpServer.layerStdio({
+          name: "proof",
+          version: "0.4.2",
+          protocols: [McpProtocol.v2025_11_25, McpProtocol.v2025_06_18, McpProtocol.v2025_03_26],
+        }),
+      ),
+      Layer.provide(NodeStdio.layer),
+      Layer.provide(Logger.layer([Logger.consolePretty()])),
+      Layer.provideMerge(Layer.succeed(Logger.LogToStderr, true)),
+    )
+    yield* Layer.launch(server)
+  }),
+).pipe(Command.withDescription("Run the proof MCP server over stdio"))
+
 const cli = Command.make("proof").pipe(
-  Command.withSubcommands([review, lint]),
+  Command.withSubcommands([review, lint, mcp]),
   Command.withDescription("Plain-english code review judged by Jev"),
 )
 

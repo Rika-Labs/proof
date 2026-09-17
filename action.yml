@@ -62,7 +62,7 @@ runs:
         if [ -z "$HEAD" ]; then HEAD="${{ github.event.pull_request.head.sha }}"; fi
         COMMENT="${{ inputs.comment }}"
         if [ "${{ github.event_name }}" != "pull_request" ]; then COMMENT="false"; fi
-        bunx --package @rikalabs/proof@${REF} cli review \
+        bunx @rikalabs/proof@${REF} review \
           --base "$BASE" \
           --head "$HEAD" \
           --rules "${{ inputs.rules }}" \
