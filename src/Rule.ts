@@ -7,6 +7,14 @@ export const SeveritySchema = Schema.Union([
   Schema.Literal("request-changes"),
 ])
 
+/** Few-shot boundary examples, sent to Jev as structured criteria. */
+export interface RuleExamples {
+  /** Diff snippets that violate the rule. */
+  readonly violate: ReadonlyArray<string>
+  /** Diff snippets that look similar but are clean. */
+  readonly clean: ReadonlyArray<string>
+}
+
 export interface NoulRule {
   readonly _tag: "Noul"
   readonly id: string
@@ -15,6 +23,7 @@ export interface NoulRule {
   readonly threshold: number
   readonly include: ReadonlyArray<string> | undefined
   readonly exclude: ReadonlyArray<string> | undefined
+  readonly examples: RuleExamples | undefined
 }
 
 export interface ChoiceRule {
@@ -53,6 +62,7 @@ export const noul = (args: {
   readonly threshold?: number
   readonly include?: ReadonlyArray<string>
   readonly exclude?: ReadonlyArray<string>
+  readonly examples?: RuleExamples
 }): NoulRule => {
   const threshold = args.threshold ?? 0.75
   if (!checkThreshold(threshold)) {
@@ -66,6 +76,7 @@ export const noul = (args: {
     threshold,
     include: args.include,
     exclude: args.exclude,
+    examples: args.examples,
   }
 }
 

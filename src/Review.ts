@@ -80,62 +80,120 @@ export const splitDiff = (diff: string): ReadonlyArray<Hunk> => {
 
 type CheckError = JevError
 
-const checkNoul = (rule: NoulRule, hunk: Hunk): Effect.Effect<Flag | null, CheckError, Jev> =>
-  Effect.gen(function* () {
-    const jev = yield* Jev
-    const ans = yield* jev.askNoul(
-      { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null },
-      withFileContext(
-        `Does this diff violate the following rule? Rule: ${rule.statement}`,
-        hunk.file,
-      ),
-    )
-    if (ans.noul >= rule.threshold) {
-      return {
-        ruleId: rule.id,
-        file: hunk.file,
-        confidence: ans.noul,
-        severity: rule.severity,
-        detail: `Violates ${rule.id} (noul ${ans.noul.toFixed(2)})`,
-        line: hunk.targetLine,
-      } satisfies Flag
-    }
-    return null
-  })
-
-const checkChoice = (rule: ChoiceRule, hunk: Hunk): Effect.Effect<Flag | null, CheckError, Jev> =>
-  Effect.gen(function* () {
-    const jev = yield* Jev
-    const ans = yield* jev.askChoice(
-      { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null },
-      withFileContext(rule.instructions, hunk.file),
-      rule.options,
-    )
-    const first = Object.keys(rule.options)[0]
-    if (ans.choice !== first && ans.confidence >= rule.threshold) {
-      return {
-        ruleId: rule.id,
-        file: hunk.file,
-        confidence: ans.confidence,
-        severity: rule.severity,
-        detail: `${rule.id}: chose ${ans.choice} (conf ${ans.confidence.toFixed(2)})`,
-        line: hunk.targetLine,
-      } satisfies Flag
-    }
-    return null
-  })
-
-export const checkHunk = (rule: Rule, hunk: Hunk): Effect.Effect<Flag | null, CheckError, Jev> => {
-  if (!matchesFile(rule, hunk.file)) return Effect.succeed(null)
-  switch (rule._tag) {
-    case "Noul":
-      return checkNoul(rule, hunk)
-    case "Choice":
-      return checkChoice(rule, hunk)
-    case "Score":
-      return Effect.succeed(null)
+/** Build the Jev question for a Noul rule, with few-shot boundary examples when present. */
+export const noulQuestion = (
+  rule: NoulRule,
+  hunk: Hunk,
+): { readonly instructions: string; readonly criteria: { readonly true: unknown; readonly false: unknown } | undefined } => {
+  const instructions = withFileContext(
+    `Does this diff violate the following rule? Rule: ${rule.statement}`,
+    hunk.file,
+  )
+  if (rule.examples === undefined) return { instructions, criteria: undefined }
+  return {
+    instructions,
+    criteria: {
+      true: { what: `Violates the rule: ${rule.statement}`, examples: [...rule.examples.violate] },
+      false: { what: "Does not violate the rule", examples: [...rule.examples.clean] },
+    },
   }
 }
+
+const interpretNoul = (rule: NoulRule, hunk: Hunk, noul: number): Flag | null => {
+  if (noul < rule.threshold) return null
+  return {
+    ruleId: rule.id,
+    file: hunk.file,
+    confidence: noul,
+    severity: rule.severity,
+    detail: `Violates ${rule.id} (noul ${noul.toFixed(2)})`,
+    line: hunk.targetLine,
+  }
+}
+
+const interpretChoice = (
+  rule: ChoiceRule,
+  hunk: Hunk,
+  choice: string,
+  confidence: number,
+): Flag | null => {
+  const first = Object.keys(rule.options)[0]
+  if (choice === first || confidence < rule.threshold) return null
+  return {
+    ruleId: rule.id,
+    file: hunk.file,
+    confidence,
+    severity: rule.severity,
+    detail: `${rule.id}: chose ${choice} (conf ${confidence.toFixed(2)})`,
+    line: hunk.targetLine,
+  }
+}
+
+export const checkHunk = (rule: Rule, hunk: Hunk): Effect.Effect<Flag | null, CheckError, Jev> =>
+  Effect.gen(function* () {
+    if (!matchesFile(rule, hunk.file)) return null
+    const jev = yield* Jev
+    const state = { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null }
+    switch (rule._tag) {
+      case "Noul": {
+        const q = noulQuestion(rule, hunk)
+        const ans = yield* jev.askNoul(state, q.instructions, q.criteria)
+        return interpretNoul(rule, hunk, ans.noul)
+      }
+      case "Choice": {
+        const ans = yield* jev.askChoice(
+          state,
+          withFileContext(rule.instructions, hunk.file),
+          rule.options,
+        )
+        return interpretChoice(rule, hunk, ans.choice, ans.confidence)
+      }
+      case "Score":
+        return null
+    }
+  })
+
+/** Review one hunk with a single batched Jev call: one question per applicable rule. */
+export const checkHunkBatched = (
+  rules: ReadonlyArray<Rule>,
+  hunk: Hunk,
+): Effect.Effect<ReadonlyArray<Flag>, CheckError, Jev> =>
+  Effect.gen(function* () {
+    const applicable = rules.filter((rule) => matchesFile(rule, hunk.file))
+    const judged = applicable.filter((rule) => rule._tag === "Noul" || rule._tag === "Choice")
+    if (judged.length === 0) return []
+    const jev = yield* Jev
+    const state = { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null }
+    const questions: Record<string, import("./Jev.ts").BatchQuestion> = {}
+    for (const rule of judged) {
+      if (rule._tag === "Noul") {
+        const q = noulQuestion(rule, hunk)
+        questions[rule.id] = q.criteria === undefined
+          ? { type: "noul", instructions: q.instructions }
+          : { type: "noul", instructions: q.instructions, criteria: q.criteria }
+      } else if (rule._tag === "Choice") {
+        questions[rule.id] = {
+          type: "choice",
+          instructions: withFileContext(rule.instructions, hunk.file),
+          criteria: rule.options,
+        }
+      }
+    }
+    const answers = yield* jev.askBatch(state, questions)
+    const flags: Array<Flag> = []
+    for (const rule of judged) {
+      const ans = answers[rule.id]
+      if (ans === undefined) continue
+      if (rule._tag === "Noul" && "noul" in ans) {
+        const flag = interpretNoul(rule, hunk, ans.noul)
+        if (flag !== null) flags.push(flag)
+      } else if (rule._tag === "Choice" && "choice" in ans && "confidence" in ans) {
+        const flag = interpretChoice(rule, hunk, ans.choice, ans.confidence)
+        if (flag !== null) flags.push(flag)
+      }
+    }
+    return flags
+  })
 
 export const reviewDiff = (
   rules: ReadonlyArray<Rule>,
@@ -145,14 +203,10 @@ export const reviewDiff = (
   Effect.gen(function* () {
     const hunks = splitDiff(diff)
     if (hunks.length === 0) return yield* new EmptyDiff({ message: "No hunks in diff" })
-    const pairs: Array<{ readonly rule: Rule; readonly hunk: Hunk }> = []
-    for (const hunk of hunks) {
-      for (const rule of rules) pairs.push({ rule, hunk })
-    }
-    const results = yield* Effect.forEach(pairs, ({ rule, hunk }) => checkHunk(rule, hunk), {
+    const nested = yield* Effect.forEach(hunks, (hunk) => checkHunkBatched(rules, hunk), {
       concurrency: options?.concurrency ?? 5,
     })
-    return results.filter((flag): flag is Flag => flag !== null)
+    return nested.flat()
   })
 
 /** Score-only helper: returns the raw idiomatic score for ranking. */

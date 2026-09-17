@@ -32,6 +32,10 @@ export default Rule.define({
       severity: "request-changes",
       threshold: 0.85,
       statement: `Error messages must tell the user what to do next. Flag throw new Error("invalid"), empty catches, or errors that swallow the cause.`,
+      examples: {
+        violate: [`catch (e) { throw new Error("failed") }`],
+        clean: [`Effect.catchTag("HttpError", (cause) => new AuthError({ cause }))`],
+      },
     }),
   ],
 }).rules
@@ -39,7 +43,7 @@ export default Rule.define({
 
 Three rule kinds, one per Jev primitive:
 
-- `Rule.noul` — violation detectors ("does this hunk violate X?"). Most rules.
+- `Rule.noul` — violation detectors ("does this hunk violate X?"). Most rules. Add `examples: { violate[], clean[] }` to pin the boundary with few-shots.
 - `Rule.choice` — classifiers over up to 255 options (`pass | comment | request-changes`).
 - `Rule.score` — gradients over 2–10 ordered levels (readability, risk).
 
@@ -87,14 +91,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: Rika-Labs/proof@v0.2.0
+      - uses: Rika-Labs/proof@v0.3.0
         with:
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
           rules: ./proof.rules.ts
 ```
 
 ```yaml
-- uses: Rika-Labs/proof@v0.2.0
+- uses: Rika-Labs/proof@v0.3.0
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
     rules: ./proof.rules.ts # omit for the built-in Effect preset
