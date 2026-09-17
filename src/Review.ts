@@ -208,7 +208,7 @@ export const reviewDiff = (
     const hunks = splitDiff(diff)
     if (hunks.length === 0) return yield* new EmptyDiff({ message: "No hunks in diff" })
     const nested = yield* Effect.forEach(hunks, (hunk) => checkHunkBatched(rules, hunk), {
-      concurrency: options?.concurrency ?? 5,
+      concurrency: options?.concurrency ?? 10,
     })
     return nested.flat()
   })

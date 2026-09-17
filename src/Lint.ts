@@ -123,6 +123,7 @@ export const lintFiles = (
   files: ReadonlyArray<string>,
   options?: {
     readonly chunkLines?: number
+    /** Parallel Jev calls. Jev is a parallel sampler; 20 is a safe default. */
     readonly concurrency?: number
     /** Directory holding .proof/cache.json. Defaults to cwd. Pass false to disable the cache. */
     readonly cacheDir?: string | false
@@ -158,7 +159,7 @@ export const lintFiles = (
       else fresh.push(chunk)
     }
     const results = yield* Effect.forEach(fresh, (chunk) => checkHunkBatched(rules, chunk.hunk), {
-      concurrency: options?.concurrency ?? 5,
+      concurrency: options?.concurrency ?? 20,
     })
     const entries: Record<string, ReadonlyArray<Flag>> = {}
     fresh.forEach((chunk, i) => {

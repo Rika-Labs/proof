@@ -1,6 +1,6 @@
 {
   "name": "@rikalabs/proof",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Plain-english rules for PRs and code review, judged by Jev. Local-first MCP — bring your own TYPESAFE_API_KEY.",
   "license": "MIT",
   "author": "Rika Labs",
@@ -32,7 +32,7 @@
     "format:check": "oxfmt --check .",
     "test": "vitest run",
     "check": "bun run typecheck && bun run lint && bun run test && bun run format:check",
-    "start": "bun src/server.ts"
+    "start": "bun src/cli.ts mcp"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.115",

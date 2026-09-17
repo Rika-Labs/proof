@@ -9,14 +9,18 @@ import {
 } from "@effect/platform-node"
 import { Data, Effect, Layer, Logger } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
-import { resolve } from "node:path"
+import { existsSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
 import { McpProtocol, McpServer } from "effect/unstable/ai"
-import { ProofToolkitLive } from "./Toolkit.ts"
+import pkg from "../package.json" with { type: "json" }
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
 import { layer as JevLive } from "./Jev.ts"
 import { collectFiles, lintFiles } from "./Lint.ts"
 import { EmptyDiff, reviewDiff, splitDiff, type Flag as ProofFlag } from "./Review.ts"
+import { ProofToolkitLive } from "./Toolkit.ts"
 import { type Rule } from "./Rule.ts"
+
+const version: string = pkg.version
 
 export class BlockingFlags extends Data.TaggedError("BlockingFlags")<{
   readonly count: number
@@ -132,21 +136,42 @@ export const isRuleArray = (value: unknown): value is ReadonlyArray<Rule> =>
       typeof (item as { id?: unknown }).id === "string",
   )
 
-/** Load a rule file (TS module default-exporting a Rule[]) or fall back to the built-in preset. */
+export const RULES_FILENAME = "proof.rules.ts"
+
+/** Find the nearest proof.rules.ts walking up from startDir toward the filesystem root. */
+export const findRulesFile = (startDir: string): string | undefined => {
+  let dir = resolve(startDir)
+  while (true) {
+    const candidate = join(dir, RULES_FILENAME)
+    if (existsSync(candidate)) return candidate
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
+/** Load a rule file (TS module default-exporting a Rule[]); empty path discovers proof.rules.ts upward. */
 export const loadRules = (path: string): Effect.Effect<ReadonlyArray<Rule>, BadArgs> =>
   Effect.gen(function* () {
-    if (path === "") {
-      return yield* new BadArgs({ message: "No rule file: pass --rules ./proof.rules.ts" })
+    let file = path
+    if (file === "") {
+      const discovered = findRulesFile(process.cwd())
+      if (discovered === undefined) {
+        return yield* new BadArgs({
+          message: `No rule file: pass --rules <path> or create ${RULES_FILENAME} in this directory or a parent`,
+        })
+      }
+      file = discovered
     }
     const mod = (yield* Effect.tryPromise({
-      try: () => import(resolve(process.cwd(), path)) as Promise<{ default?: unknown }>,
+      try: () => import(resolve(process.cwd(), file)) as Promise<{ default?: unknown }>,
       catch: (e) =>
-        new BadArgs({ message: `--rules: cannot load ${path}: ${String(e).slice(0, 200)}` }),
+        new BadArgs({ message: `--rules: cannot load ${file}: ${String(e).slice(0, 200)}` }),
     })) as { default?: unknown }
     const rules = (mod as { default?: unknown }).default ?? (mod as { rules?: unknown }).rules
     if (!isRuleArray(rules)) {
       return yield* new BadArgs({
-        message: `--rules: ${path} must default-export a non-empty Rule[] (see proof.rules.ts example)`,
+        message: `--rules: ${file} must default-export a non-empty Rule[] (see proof.rules.ts example)`,
       })
     }
     return rules
@@ -198,7 +223,9 @@ const review = Command.make(
       Flag.withDefault(false),
     ),
     rules: Flag.String("rules").pipe(
-      Flag.withDescription("Path to a rule file (TS module default-exporting Rule[]). Required."),
+      Flag.withDescription(
+        "Path to a rule file (TS module default-exporting Rule[]). Default: nearest proof.rules.ts walking up from cwd",
+      ),
       Flag.withDefault(""),
     ),
   },
@@ -262,8 +289,14 @@ const lint = Command.make(
       Argument.withDescription("Files or directories to lint (default: current directory)"),
     ),
     rules: Flag.String("rules").pipe(
-      Flag.withDescription("Path to a rule file (TS module default-exporting Rule[]). Required."),
+      Flag.withDescription(
+        "Path to a rule file (TS module default-exporting Rule[]). Default: nearest proof.rules.ts walking up from cwd",
+      ),
       Flag.withDefault(""),
+    ),
+    concurrency: Flag.String("concurrency").pipe(
+      Flag.withDescription("Parallel Jev calls (default 20)"),
+      Flag.withDefault("20"),
     ),
     failOn: Flag.String("fail-on").pipe(
       Flag.withDescription("Severity that fails the command: comment or request-changes"),
@@ -295,6 +328,10 @@ const lint = Command.make(
       if (!Number.isInteger(chunkLines) || chunkLines < 10) {
         return yield* new BadArgs({ message: `--chunk-lines must be an integer >= 10` })
       }
+      const concurrency = Number(config.concurrency)
+      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 100) {
+        return yield* new BadArgs({ message: `--concurrency must be an integer 1..100` })
+      }
       const rules = yield* loadRules(config.rules)
       const roots =
         (config.paths as ReadonlyArray<string>).length > 0
@@ -307,6 +344,7 @@ const lint = Command.make(
       }
       const outcome = yield* lintFiles(rules, files, {
         chunkLines,
+        concurrency,
         cacheDir: config.noCache ? false : process.cwd(),
       }).pipe(
         Effect.catchTag("EmptyDiff", () =>
@@ -336,7 +374,7 @@ const mcp = Command.make("mcp", {}, () =>
       Layer.provide(
         McpServer.layerStdio({
           name: "proof",
-          version: "0.4.2",
+          version,
           protocols: [McpProtocol.v2025_11_25, McpProtocol.v2025_06_18, McpProtocol.v2025_03_26],
         }),
       ),
@@ -359,4 +397,4 @@ const CliLive = Layer.mergeAll(
   NodeChildProcessSpawner.layer,
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 
-Command.run(cli, { version: "0.4.0" }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)
+Command.run(cli, { version }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)

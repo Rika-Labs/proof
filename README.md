@@ -51,24 +51,26 @@ Every rule carries `severity` (`comment` | `request-changes`) and a `threshold`,
 One lint command, locally or in CI. Reviews only changed lines, never the whole codebase:
 
 ```sh
-# lint the current branch against your rule file
-bunx @rikalabs/proof review --base origin/main --head HEAD --rules ./proof.rules.ts
+# lint the current branch; rules auto-discovered from the nearest proof.rules.ts
+bunx @rikalabs/proof review --base origin/main --head HEAD
 ```
 
 ```sh
 cli review --help # --fail-on, --min-confidence, --format annotations|json|summary, --dry-run
 ```
 
-Whole-repo lint works the same way — walks files like oxlint, judges 50-line windows, caches hits in `.proof/cache.json` so reruns only re-judge what changed:
+Whole-repo lint works the same way — walks files like oxlint, judges 50-line windows with 20 parallel Jev calls, caches hits in `.proof/cache.json` so reruns only re-judge what changed:
 
 ```sh
-bunx @rikalabs/proof lint --rules ./proof.rules.ts
-bunx @rikalabs/proof lint packages src --rules ./proof.rules.ts
+bunx @rikalabs/proof lint
+bunx @rikalabs/proof lint packages src
 ```
 
 ```sh
-cli lint --help # --chunk-lines, --no-cache, --fail-on, --min-confidence, --format
+cli lint --help # --concurrency, --chunk-lines, --no-cache, --fail-on, --min-confidence, --format
 ```
+
+Omit `--rules` anywhere and proof finds the nearest `proof.rules.ts` walking up from the current directory — root of a monorepo covers every package beneath it.
 
 Pre-push hook (`.git/hooks/pre-push`):
 
@@ -94,21 +96,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: Rika-Labs/proof@v0.4.2
+      - uses: Rika-Labs/proof@v0.5.0
         with:
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
-          rules: ./proof.rules.ts
+          # rules: ./proof.rules.ts # optional: defaults to nearest proof.rules.ts in the checkout
 ```
 
 ```yaml
-- uses: Rika-Labs/proof@v0.4.2
+- uses: Rika-Labs/proof@v0.5.0
   with:
     typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
-    rules: ./proof.rules.ts
     fail-on: request-changes # or: comment
     min-confidence: "0.85"
     comment: "true" # inline PR comments on flagged lines
     format: annotations # or: json, summary
+    # rules: ./proof.rules.ts # optional: defaults to nearest proof.rules.ts in the checkout
 ```
 
 Comments land on the first added line of each violating hunk and are deduped by an HTML marker — re-runs never double-post. Pure deletions (no added line) fall back to annotations. The job fails only on flags at `--fail-on` severity with confidence `>= --min-confidence`. Add `TYPESAFE_API_KEY` under repo Settings → Secrets → Actions first.

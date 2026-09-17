@@ -37,9 +37,9 @@ inputs:
     required: false
     default: "true"
   rules:
-    description: Path to a rule file in the repo (TS module default-exporting Rule[]).
-    required: true
-    default: ./proof.rules.ts
+    description: Path to a rule file in the repo. Empty discovers the nearest proof.rules.ts from the checkout root.
+    required: false
+    default: ""
   format:
     description: Output format (annotations, json, summary)
     required: false
@@ -62,10 +62,11 @@ runs:
         if [ -z "$HEAD" ]; then HEAD="${{ github.event.pull_request.head.sha }}"; fi
         COMMENT="${{ inputs.comment }}"
         if [ "${{ github.event_name }}" != "pull_request" ]; then COMMENT="false"; fi
+        RULES="${{ inputs.rules }}"
         bunx @rikalabs/proof@${REF} review \
           --base "$BASE" \
           --head "$HEAD" \
-          --rules "${{ inputs.rules }}" \
+          $([ -n "$RULES" ] && echo "--rules $RULES") \
           --fail-on "${{ inputs.fail-on }}" \
           --min-confidence "${{ inputs.min-confidence }}" \
           --format "${{ inputs.format }}" \
