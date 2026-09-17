@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "proof": {
+      "type": "local",
+      "command": ["bun", "/Users/dallenpyrah/Projects/rika-labs/proof/src/server.ts"],
+      "environment": {
+        "TYPESAFE_API_KEY": "{env:TYPESAFE_API_KEY}"
+      }
+    }
+  }
+}
