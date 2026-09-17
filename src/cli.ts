@@ -11,7 +11,7 @@ import { Data, Effect, Layer } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
 import { resolve } from "node:path"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
-import { layer as JevLive } from "./Jev.ts"
+import { layer as JevLive, JevError } from "./Jev.ts"
 import { effectStrict } from "./presets.ts"
 import { reviewDiff, splitDiff } from "./Review.ts"
 import { type Rule } from "./Rule.ts"
@@ -151,6 +151,12 @@ const review = Command.make(
       }
       const flags = yield* reviewDiff(rules, diff).pipe(
         Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
+        Effect.catchTag("JevError", (e) =>
+          Effect.sync(() => {
+            console.log(`::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`)
+            return [] as const
+          })
+        ),
       )
       if (config.format === "json") {
         console.log(JSON.stringify({ flags }))

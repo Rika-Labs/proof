@@ -13,6 +13,7 @@ export const effectStrict = [
     id: "effect/no-async-leak",
     severity: "request-changes",
     threshold: 0.8,
+    exclude: ["**/*.test.ts", "**/*.spec.ts"],
     statement: `Do not leak Promise or async-await into Effect graphs. Flag async functions returning Promise, await inside Effect.gen, or new Promise. Pass Effect.tryPromise, Effect.promise, Effect.sleep instead of setTimeout, and HttpClient instead of raw fetch.`,
   }),
   noul({
@@ -25,6 +26,7 @@ export const effectStrict = [
     id: "effect/no-env-global",
     severity: "comment",
     threshold: 0.75,
+    exclude: ["**/*.test.ts", "**/*.spec.ts"],
     statement: `No process.env, console.log, Date.now, or Math.random directly in business logic. Pass Config with ConfigProvider, Effect.log or Logger, Clock and Random from Effect, and Layer with Context.Tag for dependencies instead of singletons or imported globals.`,
   }),
   noul({

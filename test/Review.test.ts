@@ -35,6 +35,17 @@ describe("matchesFile", () => {
     expect(matchesFile(rule, "packages/e2b/test/Foo.ts")).toBe(false)
   })
 
+  it("exclude wins over include", () => {
+    const rule = noul({
+      id: "x",
+      statement: "s",
+      include: ["**/src/**/*.ts"],
+      exclude: ["**/*.test.ts"],
+    })
+    expect(matchesFile(rule, "packages/e2b/src/E2BClient.ts")).toBe(true)
+    expect(matchesFile(rule, "packages/e2b/src/E2BClient.test.ts")).toBe(false)
+  })
+
   it("matches everything without include", () => {
     const rule = noul({ id: "x", statement: "s" })
     expect(matchesFile(rule, "anything/at/all.md")).toBe(true)

@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect"
 import { Jev, JevError } from "./Jev.ts"
-import { matchesFile, type ChoiceRule, type NoulRule, type Rule, type ScoreRule } from "./Rule.ts"
+import { matchesFile, withFileContext, type ChoiceRule, type NoulRule, type Rule, type ScoreRule } from "./Rule.ts"
 
 export interface Hunk {
   readonly file: string
@@ -78,7 +78,7 @@ const checkNoul = (rule: NoulRule, hunk: Hunk): Effect.Effect<Flag | null, Check
     const jev = yield* Jev
     const ans = yield* jev.askNoul(
       { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null },
-      `Does this diff violate the following rule? Rule: ${rule.statement}`,
+      withFileContext(`Does this diff violate the following rule? Rule: ${rule.statement}`, hunk.file),
     )
     if (ans.noul >= rule.threshold) {
       return {
@@ -98,7 +98,7 @@ const checkChoice = (rule: ChoiceRule, hunk: Hunk): Effect.Effect<Flag | null, C
     const jev = yield* Jev
     const ans = yield* jev.askChoice(
       { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null },
-      rule.instructions,
+      withFileContext(rule.instructions, hunk.file),
       rule.options,
     )
     const first = Object.keys(rule.options)[0]
