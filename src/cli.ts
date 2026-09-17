@@ -8,11 +8,12 @@ import {
   NodeTerminal,
 } from "@effect/platform-node"
 import { Data, Effect, Layer } from "effect"
-import { Command, Flag } from "effect/unstable/cli"
+import { Argument, Command, Flag } from "effect/unstable/cli"
 import { resolve } from "node:path"
 import { GithubError, postInlineComments, targetFromEnv } from "./Github.ts"
 import { layer as JevLive } from "./Jev.ts"
-import { reviewDiff, splitDiff } from "./Review.ts"
+import { collectFiles, lintFiles } from "./Lint.ts"
+import { EmptyDiff, reviewDiff, splitDiff, type Flag as ProofFlag } from "./Review.ts"
 import { type Rule } from "./Rule.ts"
 
 export class BlockingFlags extends Data.TaggedError("BlockingFlags")<{
@@ -46,6 +47,76 @@ const parseConfidence = (raw: string): Effect.Effect<number, BadArgs> => {
   }
   return Effect.succeed(value)
 }
+
+type ReportFormat = "annotations" | "json" | "summary"
+
+const parseFormat = (raw: string): Effect.Effect<ReportFormat, BadArgs> => {
+  if (raw === "annotations" || raw === "json" || raw === "summary") return Effect.succeed(raw)
+  return Effect.fail(new BadArgs({ message: `--format must be annotations, json, or summary` }))
+}
+
+const parseFailOn = (raw: string): Effect.Effect<"comment" | "request-changes", BadArgs> => {
+  if (raw === "comment" || raw === "request-changes") return Effect.succeed(raw)
+  return Effect.fail(new BadArgs({ message: `--fail-on must be comment or request-changes` }))
+}
+
+const reportFlags = (flags: ReadonlyArray<ProofFlag>, format: ReportFormat): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    if (format === "json") {
+      console.log(JSON.stringify({ flags }))
+    } else if (format === "summary") {
+      const rows = flags.map(
+        (f) =>
+          `| \`${f.ruleId}\` | \`${f.file}${f.line !== undefined ? `:${f.line}` : ""}\` | ${f.confidence.toFixed(2)} | ${f.severity} |`,
+      )
+      const body = `### proof review\n\n| rule | location | conf | severity |\n|---|---|---|---|\n${rows.join("\n") || "| — | no flags | — | — |"}`
+      const summaryFile = process.env["GITHUB_STEP_SUMMARY"]
+      if (summaryFile !== undefined && summaryFile !== "") {
+        yield* Effect.promise(() =>
+          Bun.write(Bun.file(summaryFile, { type: "text/markdown" }), `${body}\n`),
+        )
+      } else {
+        console.log(body)
+      }
+    } else {
+      for (const f of flags) {
+        const level = f.severity === "request-changes" ? "error" : "warning"
+        console.log(
+          `::${level} file=${f.file}${f.line !== undefined ? `,line=${f.line}` : ""}::proof ${f.ruleId} (${f.confidence.toFixed(2)}): ${f.detail}`,
+        )
+      }
+    }
+  })
+
+const gateFlags = (
+  flags: ReadonlyArray<ProofFlag>,
+  failOn: "comment" | "request-changes",
+  minConf: number,
+): Effect.Effect<void, BlockingFlags> =>
+  Effect.gen(function* () {
+    const blocking = flags.filter((f) => f.severity === failOn && f.confidence >= minConf)
+    if (blocking.length > 0) return yield* new BlockingFlags({ count: blocking.length })
+    console.log(`proof: ${flags.length} flag(s), none blocking`)
+  })
+
+const withJevFailOpen = <R>(
+  self: Effect.Effect<
+    ReadonlyArray<ProofFlag>,
+    EmptyDiff | { readonly _tag: "JevError"; readonly message: string },
+    R
+  >,
+): Effect.Effect<ReadonlyArray<ProofFlag>, never, R> =>
+  self.pipe(
+    Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
+    Effect.catchTag("JevError", (e) =>
+      Effect.sync(() => {
+        console.log(
+          `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
+        )
+        return [] as const
+      }),
+    ),
+  )
 
 export const isRuleArray = (value: unknown): value is ReadonlyArray<Rule> =>
   Array.isArray(value) &&
@@ -132,57 +203,16 @@ const review = Command.make(
   (config) =>
     Effect.gen(function* () {
       const minConf = yield* parseConfidence(config.minConfidence)
-      if (config.failOn !== "comment" && config.failOn !== "request-changes") {
-        return yield* new BadArgs({ message: `--fail-on must be comment or request-changes` })
-      }
-      if (
-        config.format !== "annotations" &&
-        config.format !== "json" &&
-        config.format !== "summary"
-      ) {
-        return yield* new BadArgs({ message: `--format must be annotations, json, or summary` })
-      }
+      const failOn = yield* parseFailOn(config.failOn)
+      const format = yield* parseFormat(config.format)
       const rules = yield* loadRules(config.rules)
       const diff = yield* gitDiff(config.base, config.head)
       if (splitDiff(diff).length === 0) {
         console.log("proof: no hunks, skipping")
         return
       }
-      const flags = yield* reviewDiff(rules, diff).pipe(
-        Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
-        Effect.catchTag("JevError", (e) =>
-          Effect.sync(() => {
-            console.log(
-              `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
-            )
-            return [] as const
-          }),
-        ),
-      )
-      if (config.format === "json") {
-        console.log(JSON.stringify({ flags }))
-      } else if (config.format === "summary") {
-        const rows = flags.map(
-          (f) =>
-            `| \`${f.ruleId}\` | \`${f.file}${f.line !== undefined ? `:${f.line}` : ""}\` | ${f.confidence.toFixed(2)} | ${f.severity} |`,
-        )
-        const body = `### proof review\n\n| rule | location | conf | severity |\n|---|---|---|---|\n${rows.join("\n") || "| — | no flags | — | — |"}`
-        const summaryFile = process.env["GITHUB_STEP_SUMMARY"]
-        if (summaryFile !== undefined && summaryFile !== "") {
-          yield* Effect.promise(() =>
-            Bun.write(Bun.file(summaryFile, { type: "text/markdown" }), `${body}\n`),
-          )
-        } else {
-          console.log(body)
-        }
-      } else {
-        for (const f of flags) {
-          const level = f.severity === "request-changes" ? "error" : "warning"
-          console.log(
-            `::${level} file=${f.file}${f.line !== undefined ? `,line=${f.line}` : ""}::proof ${f.ruleId} (${f.confidence.toFixed(2)}): ${f.detail}`,
-          )
-        }
-      }
+      const flags = yield* withJevFailOpen(reviewDiff(rules, diff))
+      yield* reportFlags(flags, format)
 
       if (config.comment || config.dryRun) {
         const target = targetFromEnv({
@@ -218,16 +248,88 @@ const review = Command.make(
         }
       }
 
-      const blocking = flags.filter((f) => f.severity === config.failOn && f.confidence >= minConf)
-      if (blocking.length > 0) {
-        return yield* new BlockingFlags({ count: blocking.length })
-      }
-      console.log(`proof: ${flags.length} flag(s), none blocking`)
+      yield* gateFlags(flags, failOn, minConf)
     }).pipe(Effect.provide(JevLive)),
 ).pipe(Command.withDescription("Review a git diff with plain-english rules judged by Jev"))
 
+const lint = Command.make(
+  "lint",
+  {
+    paths: Argument.String("paths").pipe(
+      Argument.variadic,
+      Argument.withDescription("Files or directories to lint (default: current directory)"),
+    ),
+    rules: Flag.String("rules").pipe(
+      Flag.withDescription("Path to a rule file (TS module default-exporting Rule[]). Required."),
+      Flag.withDefault(""),
+    ),
+    failOn: Flag.String("fail-on").pipe(
+      Flag.withDescription("Severity that fails the command: comment or request-changes"),
+      Flag.withDefault("request-changes"),
+    ),
+    minConfidence: Flag.String("min-confidence").pipe(
+      Flag.withDescription("Minimum confidence (0..1) for a flag to fail the command"),
+      Flag.withDefault("0.85"),
+    ),
+    format: Flag.String("format").pipe(
+      Flag.withDescription("Output format: annotations (GitHub), json, or summary"),
+      Flag.withDefault("annotations"),
+    ),
+    chunkLines: Flag.String("chunk-lines").pipe(
+      Flag.withDescription("Lines per file window sent to Jev"),
+      Flag.withDefault("50"),
+    ),
+    noCache: Flag.Boolean("no-cache").pipe(
+      Flag.withDescription("Ignore .proof/cache.json and re-judge everything"),
+      Flag.withDefault(false),
+    ),
+  },
+  (config) =>
+    Effect.gen(function* () {
+      const minConf = yield* parseConfidence(config.minConfidence)
+      const failOn = yield* parseFailOn(config.failOn)
+      const format = yield* parseFormat(config.format)
+      const chunkLines = Number(config.chunkLines)
+      if (!Number.isInteger(chunkLines) || chunkLines < 10) {
+        return yield* new BadArgs({ message: `--chunk-lines must be an integer >= 10` })
+      }
+      const rules = yield* loadRules(config.rules)
+      const roots =
+        (config.paths as ReadonlyArray<string>).length > 0
+          ? [...(config.paths as ReadonlyArray<string>)]
+          : ["."]
+      const files = collectFiles(roots, rules)
+      if (files.length === 0) {
+        console.log("proof: no files match the rules, skipping")
+        return
+      }
+      const outcome = yield* lintFiles(rules, files, {
+        chunkLines,
+        cacheDir: config.noCache ? false : process.cwd(),
+      }).pipe(
+        Effect.catchTag("EmptyDiff", () =>
+          Effect.succeed({ flags: [], checked: 0, cached: 0 } as const),
+        ),
+        Effect.catchTag("JevError", (e) =>
+          Effect.sync(() => {
+            console.log(
+              `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
+            )
+            return { flags: [], checked: 0, cached: 0 } as const
+          }),
+        ),
+      )
+      const flags = outcome.flags
+      yield* reportFlags(flags, format)
+      console.log(
+        `proof: ${flags.length} flag(s) across ${files.length} file(s), ${outcome.checked} window(s), ${outcome.cached} cached`,
+      )
+      yield* gateFlags(flags, failOn, minConf)
+    }).pipe(Effect.provide(JevLive)),
+).pipe(Command.withDescription("Lint whole files with plain-english rules judged by Jev"))
+
 const cli = Command.make("proof").pipe(
-  Command.withSubcommands([review]),
+  Command.withSubcommands([review, lint]),
   Command.withDescription("Plain-english code review judged by Jev"),
 )
 

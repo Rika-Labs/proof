@@ -1,5 +1,6 @@
 export * as Rule from "./Rule.ts"
 export * as Jev from "./Jev.ts"
 export * as Review from "./Review.ts"
+export * as Lint from "./Lint.ts"
 export * as Toolkit from "./Toolkit.ts"
 export * as Github from "./Github.ts"

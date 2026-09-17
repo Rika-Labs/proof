@@ -59,6 +59,17 @@ bunx --package @rikalabs/proof cli review --base origin/main --head HEAD --rules
 cli review --help # --fail-on, --min-confidence, --format annotations|json|summary, --dry-run
 ```
 
+Whole-repo lint works the same way — walks files like oxlint, judges 50-line windows, caches hits in `.proof/cache.json` so reruns only re-judge what changed:
+
+```sh
+bunx --package @rikalabs/proof cli lint --rules ./proof.rules.ts
+bunx --package @rikalabs/proof cli lint packages src --rules ./proof.rules.ts
+```
+
+```sh
+cli lint --help # --chunk-lines, --no-cache, --fail-on, --min-confidence, --format
+```
+
 Pre-push hook (`.git/hooks/pre-push`):
 
 ```sh
