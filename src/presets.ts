@@ -6,7 +6,7 @@ export const effectStrict = [
     id: "effect/no-throw",
     severity: "request-changes",
     threshold: 0.8,
-    include: ["src/**/*.ts"],
+    include: ["**/src/**/*.ts"],
     statement: `Do not throw exceptions in Effect code. Flag throw, Promise.reject, or catch blocks that rethrow as Error. Pass Effect.fail for expected errors with Data.TaggedError, Effect.die only for defects, Effect.catchAll or catchTag for handling. try/catch is only allowed at the outer runMain boundary.`,
   }),
   noul({

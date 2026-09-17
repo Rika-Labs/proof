@@ -28,6 +28,13 @@ describe("matchesFile", () => {
     expect(matchesFile(rule, "test/Foo.ts")).toBe(false)
   })
 
+  it("matches monorepo nested src dirs with ** prefix", () => {
+    const rule = noul({ id: "x", statement: "s", include: ["**/src/**/*.ts"] })
+    expect(matchesFile(rule, "packages/e2b/src/E2BClient.ts")).toBe(true)
+    expect(matchesFile(rule, "src/Foo.ts")).toBe(true)
+    expect(matchesFile(rule, "packages/e2b/test/Foo.ts")).toBe(false)
+  })
+
   it("matches everything without include", () => {
     const rule = noul({ id: "x", statement: "s" })
     expect(matchesFile(rule, "anything/at/all.md")).toBe(true)

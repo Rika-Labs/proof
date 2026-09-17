@@ -111,14 +111,33 @@ export const define = (args: { readonly rules: ReadonlyArray<Rule> }) => args
 export const matchesFile = (rule: Rule, file: string): boolean => {
   const patterns = rule.include
   if (patterns === undefined || patterns.length === 0) return true
-  return patterns.some((pattern) => {
-    if (pattern.endsWith("/**/*.ts")) {
-      const prefix = pattern.slice(0, -"/**/*.ts".length)
-      return file.startsWith(prefix) && file.endsWith(".ts")
+  return patterns.some((pattern) => globMatch(pattern, file))
+}
+
+/** Minimal glob: double-star crosses directories, star stays within a segment, ? is one char. */
+export const globMatch = (pattern: string, file: string): boolean => {
+  let out = "^"
+  let i = 0
+  while (i < pattern.length) {
+    const c = pattern[i]
+    if (c === "*" && pattern[i + 1] === "*") {
+      out += pattern[i + 2] === "/" ? "(.*/)?" : ".*"
+      i += pattern[i + 2] === "/" ? 3 : 2
+    } else if (c === "*") {
+      out += "[^/]*"
+      i += 1
+    } else if (c === "?") {
+      out += "[^/]"
+      i += 1
+    } else if (c === undefined) {
+      i += 1
+    } else if ("+^${}()|[]\\".includes(c) || c === ".") {
+      out += `\\${c}`
+      i += 1
+    } else {
+      out += c
+      i += 1
     }
-    if (pattern.endsWith("/**")) {
-      return file.startsWith(pattern.slice(0, -"/**"))
-    }
-    return file === pattern
-  })
+  }
+  return new RegExp(`${out}$`).test(file)
 }
