@@ -9,8 +9,8 @@
     "url": "https://github.com/Rika-Labs/proof.git"
   },
   "bin": {
-    "proof": "./src/cli.ts",
-    "proof-mcp": "./src/server.ts"
+    "cli": "./src/cli.ts",
+    "mcp": "./src/server.ts"
   },
   "files": [
     "src",

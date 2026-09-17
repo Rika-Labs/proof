@@ -23,7 +23,7 @@ Any MCP client (OpenCode, Claude Code, Cursor). Requires Bun on `PATH`.
 
 ```sh
 export TYPESAFE_API_KEY=...
-bunx --package @rikalabs/proof proof-mcp
+bunx --package @rikalabs/proof mcp
 ```
 
 OpenCode (`~/.config/opencode/opencode.json` or project `opencode.json`):
@@ -33,7 +33,7 @@ OpenCode (`~/.config/opencode/opencode.json` or project `opencode.json`):
   "mcp": {
     "proof": {
       "type": "local",
-      "command": ["bunx", "--package", "@rikalabs/proof", "proof-mcp"],
+      "command": ["bunx", "--package", "@rikalabs/proof", "mcp"],
       "environment": { "TYPESAFE_API_KEY": "{env:TYPESAFE_API_KEY}" }
     }
   }
@@ -47,7 +47,7 @@ Claude Code (`~/.claude.json` or `.mcp.json`):
   "mcpServers": {
     "proof": {
       "command": "bunx",
-      "args": ["--package", "@rikalabs/proof", "proof-mcp"],
+      "args": ["--package", "@rikalabs/proof", "mcp"],
       "env": { "TYPESAFE_API_KEY": "…" }
     }
   }
@@ -111,13 +111,13 @@ Or call the CLI directly (any pipeline with Bun — GitLab CI, Buildkite, pre-pu
 
 ```sh
 export TYPESAFE_API_KEY=...
-bunx --package @rikalabs/proof proof review \
+bunx --package @rikalabs/proof cli review \
   --base origin/main --head HEAD \
   --comment --repo owner/repo --pr 123 --commit <head-sha>
 ```
 
 ```sh
-proof review --help   # all flags
+cli review --help   # all flags
 ```
 
 Minimal pre-push hook (`.git/hooks/pre-push`):
@@ -125,7 +125,7 @@ Minimal pre-push hook (`.git/hooks/pre-push`):
 ```sh
 #!/bin/sh
 export TYPESAFE_API_KEY=...
-bunx --package @rikalabs/proof proof review --base origin/main --head HEAD
+bunx --package @rikalabs/proof cli review --base origin/main --head HEAD
 ```
 
 Notes:
