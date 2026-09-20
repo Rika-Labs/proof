@@ -34,10 +34,15 @@ export class MissingTarget extends Data.TaggedError("MissingTarget")<{
   readonly message: string
 }> {}
 
-const gitDiff = (base: string, head: string): Effect.Effect<string, GithubError> =>
+export const gitDiff = (
+  base: string,
+  head: string,
+  direct = false,
+): Effect.Effect<string, GithubError> =>
   Effect.try({
     try: () => {
-      const proc = Bun.spawnSync(["git", "diff", `${base}...${head}`, "--", "."])
+      const refs = direct ? [base, head] : [`${base}...${head}`]
+      const proc = Bun.spawnSync(["git", "diff", "--no-ext-diff", ...refs, "--", "."])
       if (proc.exitCode !== 0)
         throw new Error(`git diff failed: ${proc.stderr.toString().slice(0, 200)}`)
       return proc.stdout.toString()
@@ -172,6 +177,12 @@ const review = Command.make(
       Flag.withDescription("Git head ref for the diff (default: HEAD)"),
       Flag.withDefault("HEAD"),
     ),
+    direct: Flag.Boolean("direct").pipe(
+      Flag.withDescription(
+        "Compare base and head trees directly instead of their merge base (for pre-push and empty-tree bases)",
+      ),
+      Flag.withDefault(false),
+    ),
     failOn: Flag.String("fail-on").pipe(
       Flag.withDescription("Severity that fails the command: comment or request-changes"),
       Flag.withDefault("request-changes"),
@@ -219,7 +230,7 @@ const review = Command.make(
       const failOn = yield* parseFailOn(config.failOn)
       const format = yield* parseFormat(config.format)
       const rules = yield* loadRules(config.rules)
-      const diff = yield* gitDiff(config.base, config.head)
+      const diff = yield* gitDiff(config.base, config.head, config.direct)
       if (splitDiff(diff).length === 0) {
         console.log("proof: no hunks, skipping")
         return
