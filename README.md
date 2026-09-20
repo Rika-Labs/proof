@@ -12,9 +12,10 @@ _A plain-english rulebook for code review, judged by Jev. If you can say it in r
 Local-first — **bring your own `TYPESAFE_API_KEY`**. Proof sends evidence and the key to TypeSafe through Distilled; do not submit secrets as evidence. Requires [Bun](https://bun.sh) >= 1.2.
 
 **Development branch:** this checkout requires sibling `../distilled/packages/typesafe`
-from the Rika-Labs Distilled fork. That provider is unreleased (`0.0.0`); the local
-`file:` dependency is intentional and must be replaced by a separately approved
-release before publishing Proof. This is tested against fixtures, not live Jev.
+from the Rika-Labs Distilled fork. Its `1.0.0-rc.7` release is prepared but npm
+publication is blocked. Replace the local packed `file:` dependency with the
+published version and regenerate the lockfile before publishing Proof 0.5.1.
+Transport tests and live Jev inference have passed; live Judge inference is unverified.
 
 ```sh
 bun add @rikalabs/proof
@@ -188,8 +189,8 @@ npx --yes bun@1.4.2 run check # typecheck + lint + tests + format:check
 ## Amp plugin
 
 The directory plugin `.amp/plugins/proof` registers `jev`, `judge`, and the bundled
-`proof:jev` skill. Both tools are hidden by `builtin-tools` gating until the skill
-loads. `src/Amp.ts` exports `register(amp, services?)` for embedding; one
+`proof:jev` skill. Both tools are visible without a skill gate; their descriptions
+direct agents to the skill's usage guidance. `src/Amp.ts` exports `register(amp, services?)` for embedding; one
 ManagedRuntime is owned by each plugin instance and disposed on unload.
 
 `jev` accepts arbitrary JSON state and 1–32 bounded noul/choice/score questions.
