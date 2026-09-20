@@ -40,7 +40,7 @@
     "@effect/ai-typesafe": "4.0.0-rc.116",
     "@effect/platform-node": "4.0.0-rc.116",
     "@effect/platform-node-shared": "4.0.0-rc.116",
-    "@rikalabs/distilled-typesafe": "file:../distilled/packages/typesafe/dist/rikalabs-distilled-typesafe-1.0.0-rc.7.tgz",
+    "@rikalabs/distilled-typesafe": "1.0.0-rc.7",
     "effect": "4.0.0-rc.116"
   },
   "devDependencies": {
