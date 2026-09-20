@@ -102,6 +102,7 @@ describe("collectFiles", () => {
 
 describe("lintFiles", () => {
   const stub = Jev.of({
+    cacheIdentity: { provider: "test", model: "fixed", evaluator: "test", revision: "1" },
     askBatch: (_state, questions) =>
       Effect.succeed(Object.fromEntries(Object.keys(questions).map((id) => [id, { noul: 0.9 }]))),
     askNoul: () => Effect.succeed({ noul: 0 }),
@@ -132,6 +133,7 @@ describe("lintFiles", () => {
     expect(first.flags).toHaveLength(2)
 
     const exploding = Jev.of({
+      cacheIdentity: stub.cacheIdentity!,
       askBatch: () => Effect.die("must not call Jev on cache hit"),
       askNoul: () => Effect.die("must not call Jev on cache hit"),
       askChoice: () => Effect.die("must not call Jev on cache hit"),
@@ -144,5 +146,45 @@ describe("lintFiles", () => {
     )
     expect(second.cached).toBe(2)
     expect(second.flags).toHaveLength(2)
+  })
+
+  it.each(["model", "provider", "evaluator", "revision"] as const)(
+    "invalidates a changed %s",
+    async (field) => {
+      const rules = [noul({ id: "x", statement: "s" })]
+      const run = (service: typeof stub) =>
+        Effect.runPromise(
+          lintFiles(rules, [`${root}/src/a.ts`], { cacheDir: root }).pipe(
+            Effect.provideService(Jev, service),
+          ),
+        )
+      await run(stub)
+      const changed = await run({
+        ...stub,
+        cacheIdentity: { ...stub.cacheIdentity!, [field]: "changed" },
+      })
+      expect(changed.cached).toBe(0)
+      expect(changed.flags).toHaveLength(2)
+    },
+  )
+
+  it("invalidates chunk context and threshold policy, and disables unidentified reuse", async () => {
+    const run = (threshold: number, chunkLines: number, service = stub) =>
+      Effect.runPromise(
+        lintFiles([noul({ id: "x", statement: "s", threshold })], [`${root}/src/a.ts`], {
+          chunkLines,
+          cacheDir: root,
+        }).pipe(Effect.provideService(Jev, service)),
+      )
+    await run(0.5, 50)
+    const windows = await run(0.5, 30)
+    expect(windows.cached).toBe(0)
+    expect(windows.flags.map((flag) => flag.line)).toEqual([1, 31])
+    const policy = await run(0.95, 30)
+    expect(policy.cached).toBe(0)
+    expect(policy.flags).toEqual([])
+    const { cacheIdentity: _, ...unidentified } = stub
+    const uncached = await run(0.5, 50, unidentified)
+    expect(uncached.cached).toBe(0)
   })
 })

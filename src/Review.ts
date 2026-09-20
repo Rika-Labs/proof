@@ -1,7 +1,8 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Schema } from "effect"
 import { Jev, JevError } from "./Jev.ts"
 import {
   matchesFile,
+  RulesSchema,
   withFileContext,
   type ChoiceRule,
   type NoulRule,
@@ -120,8 +121,7 @@ const interpretChoice = (
   choice: string,
   confidence: number,
 ): Flag | null => {
-  const first = Object.keys(rule.options)[0]
-  if (choice === first || confidence < rule.threshold) return null
+  if (rule.passing.includes(choice) || confidence < rule.threshold) return null
   return {
     ruleId: rule.id,
     file: hunk.file,
@@ -133,28 +133,7 @@ const interpretChoice = (
 }
 
 export const checkHunk = (rule: Rule, hunk: Hunk): Effect.Effect<Flag | null, CheckError, Jev> =>
-  Effect.gen(function* () {
-    if (!matchesFile(rule, hunk.file)) return null
-    const jev = yield* Jev
-    const state = { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null }
-    switch (rule._tag) {
-      case "Noul": {
-        const q = noulQuestion(rule, hunk)
-        const ans = yield* jev.askNoul(state, q.instructions, q.criteria)
-        return interpretNoul(rule, hunk, ans.noul)
-      }
-      case "Choice": {
-        const ans = yield* jev.askChoice(
-          state,
-          withFileContext(rule.instructions, hunk.file),
-          rule.options,
-        )
-        return interpretChoice(rule, hunk, ans.choice, ans.confidence)
-      }
-      case "Score":
-        return null
-    }
-  })
+  checkHunkBatched([rule], hunk).pipe(Effect.map((flags) => flags[0] ?? null))
 
 /** Review one hunk with a single batched Jev call: one question per applicable rule. */
 export const checkHunkBatched = (
@@ -162,12 +141,17 @@ export const checkHunkBatched = (
   hunk: Hunk,
 ): Effect.Effect<ReadonlyArray<Flag>, CheckError, Jev> =>
   Effect.gen(function* () {
+    if (!Schema.is(RulesSchema)(rules))
+      return yield* new JevError({
+        status: undefined,
+        message: "Invalid rules or duplicate rule ids",
+      })
     const applicable = rules.filter((rule) => matchesFile(rule, hunk.file))
     const judged = applicable.filter((rule) => rule._tag === "Noul" || rule._tag === "Choice")
     if (judged.length === 0) return []
     const jev = yield* Jev
     const state = { file: hunk.file, diff: hunk.diff, content: hunk.content ?? null }
-    const questions: Record<string, import("./Jev.ts").BatchQuestion> = {}
+    const questions: Record<string, import("./Jev.ts").BatchQuestion> = Object.create(null)
     for (const rule of judged) {
       if (rule._tag === "Noul") {
         const q = noulQuestion(rule, hunk)
@@ -187,7 +171,22 @@ export const checkHunkBatched = (
     const flags: Array<Flag> = []
     for (const rule of judged) {
       const ans = answers[rule.id]
-      if (ans === undefined) continue
+      if (
+        ans === undefined ||
+        (rule._tag === "Noul" &&
+          (!("noul" in ans) || !Number.isFinite(ans.noul) || ans.noul < 0 || ans.noul > 1)) ||
+        (rule._tag === "Choice" &&
+          (!("choice" in ans) ||
+            !Object.hasOwn(rule.options, ans.choice) ||
+            !Number.isFinite(ans.confidence) ||
+            ans.confidence < 0 ||
+            ans.confidence > 1))
+      ) {
+        return yield* new JevError({
+          status: undefined,
+          message: `Invalid or missing answer for ${rule.id}`,
+        })
+      }
       if (rule._tag === "Noul" && "noul" in ans) {
         const flag = interpretNoul(rule, hunk, ans.noul)
         if (flag !== null) flags.push(flag)

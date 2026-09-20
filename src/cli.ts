@@ -7,7 +7,7 @@ import {
   NodeStdio,
   NodeTerminal,
 } from "@effect/platform-node"
-import { Data, Effect, Layer, Logger } from "effect"
+import { Data, Effect, Layer, Logger, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { existsSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
@@ -18,7 +18,7 @@ import { layer as JevLive } from "./Jev.ts"
 import { collectFiles, lintFiles } from "./Lint.ts"
 import { EmptyDiff, reviewDiff, splitDiff, type Flag as ProofFlag } from "./Review.ts"
 import { ProofToolkitLive } from "./Toolkit.ts"
-import { type Rule } from "./Rule.ts"
+import { RulesSchema, type Rule } from "./Rule.ts"
 
 const version: string = pkg.version
 
@@ -105,36 +105,20 @@ const gateFlags = (
     console.log(`proof: ${flags.length} flag(s), none blocking`)
   })
 
-const withJevFailOpen = <R>(
+export const reviewOutcome = <R>(
   self: Effect.Effect<
     ReadonlyArray<ProofFlag>,
     EmptyDiff | { readonly _tag: "JevError"; readonly message: string },
     R
   >,
-): Effect.Effect<ReadonlyArray<ProofFlag>, never, R> =>
-  self.pipe(
-    Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)),
-    Effect.catchTag("JevError", (e) =>
-      Effect.sync(() => {
-        console.log(
-          `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
-        )
-        return [] as const
-      }),
-    ),
-  )
+): Effect.Effect<
+  ReadonlyArray<ProofFlag>,
+  { readonly _tag: "JevError"; readonly message: string },
+  R
+> => self.pipe(Effect.catchTag("EmptyDiff", () => Effect.succeed([] as const)))
 
 export const isRuleArray = (value: unknown): value is ReadonlyArray<Rule> =>
-  Array.isArray(value) &&
-  value.length > 0 &&
-  value.every(
-    (item): item is Rule =>
-      typeof item === "object" &&
-      item !== null &&
-      (item as { _tag?: unknown })._tag !== undefined &&
-      ["Noul", "Choice", "Score"].includes((item as { _tag: unknown })._tag as string) &&
-      typeof (item as { id?: unknown }).id === "string",
-  )
+  Schema.is(RulesSchema)(value) && value.length > 0
 
 export const RULES_FILENAME = "proof.rules.ts"
 
@@ -240,7 +224,7 @@ const review = Command.make(
         console.log("proof: no hunks, skipping")
         return
       }
-      const flags = yield* withJevFailOpen(reviewDiff(rules, diff))
+      const flags = yield* reviewOutcome(reviewDiff(rules, diff))
       yield* reportFlags(flags, format)
 
       if (config.comment || config.dryRun) {
@@ -350,14 +334,6 @@ const lint = Command.make(
         Effect.catchTag("EmptyDiff", () =>
           Effect.succeed({ flags: [], checked: 0, cached: 0 } as const),
         ),
-        Effect.catchTag("JevError", (e) =>
-          Effect.sync(() => {
-            console.log(
-              `::warning::proof backend unavailable (${e.message.slice(0, 120)}); skipping review`,
-            )
-            return { flags: [], checked: 0, cached: 0 } as const
-          }),
-        ),
       )
       const flags = outcome.flags
       yield* reportFlags(flags, format)
@@ -397,4 +373,5 @@ const CliLive = Layer.mergeAll(
   NodeChildProcessSpawner.layer,
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 
-Command.run(cli, { version }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)
+if (import.meta.main)
+  Command.run(cli, { version }).pipe(Effect.provide(CliLive), NodeRuntime.runMain)

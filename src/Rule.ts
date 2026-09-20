@@ -31,6 +31,7 @@ export interface ChoiceRule {
   readonly id: string
   readonly instructions: string
   readonly options: Record<string, string>
+  readonly passing: ReadonlyArray<string>
   readonly severity: Severity
   readonly threshold: number
   readonly include: ReadonlyArray<string> | undefined
@@ -53,7 +54,50 @@ export class InvalidRule extends Data.TaggedError("InvalidRule")<{
   readonly reason: string
 }> {}
 
-const checkThreshold = (threshold: number): boolean => threshold >= 0 && threshold <= 1
+const Threshold = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+const checkThreshold = Schema.is(Threshold)
+const common = {
+  id: Schema.String.check(Schema.isMinLength(1)),
+  severity: SeveritySchema,
+  include: Schema.optional(Schema.Array(Schema.String)),
+  exclude: Schema.optional(Schema.Array(Schema.String)),
+}
+export const RuleSchema = Schema.Union([
+  Schema.Struct({
+    ...common,
+    _tag: Schema.Literal("Noul"),
+    statement: Schema.String,
+    threshold: Threshold,
+    examples: Schema.optional(
+      Schema.Struct({ violate: Schema.Array(Schema.String), clean: Schema.Array(Schema.String) }),
+    ),
+  }),
+  Schema.Struct({
+    ...common,
+    _tag: Schema.Literal("Choice"),
+    instructions: Schema.String,
+    threshold: Threshold,
+    options: Schema.Record(Schema.String, Schema.String),
+    passing: Schema.Array(Schema.String),
+  }).check(
+    Schema.makeFilter(
+      (rule) =>
+        Object.keys(rule.options).length >= 2 &&
+        Object.keys(rule.options).length <= 255 &&
+        rule.passing.length > 0 &&
+        rule.passing.every((key) => Object.hasOwn(rule.options, key)),
+    ),
+  ),
+  Schema.Struct({
+    ...common,
+    _tag: Schema.Literal("Score"),
+    instructions: Schema.String,
+    levels: Schema.Array(Schema.String).check(Schema.isMinLength(2), Schema.isMaxLength(10)),
+  }),
+])
+export const RulesSchema = Schema.Array(RuleSchema).check(
+  Schema.makeFilter((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length),
+)
 
 export const noul = (args: {
   readonly id: string
@@ -84,20 +128,32 @@ export const choice = (args: {
   readonly id: string
   readonly instructions: string
   readonly options: Record<string, string>
+  readonly passing: ReadonlyArray<string>
   readonly severity?: Severity
   readonly threshold?: number
   readonly include?: ReadonlyArray<string>
   readonly exclude?: ReadonlyArray<string>
 }): ChoiceRule => {
   const threshold = args.threshold ?? 0.75
+  if (!checkThreshold(threshold)) {
+    throw new InvalidRule({ reason: `threshold must be 0..1, got ${threshold}` })
+  }
   const keys = Object.keys(args.options)
   if (keys.length < 2) throw new InvalidRule({ reason: "choice needs >= 2 options" })
   if (keys.length > 255) throw new InvalidRule({ reason: "choice supports max 255 options" })
+  if (
+    !Array.isArray(args.passing) ||
+    args.passing.length === 0 ||
+    args.passing.some((key) => !keys.includes(key))
+  ) {
+    throw new InvalidRule({ reason: "choice needs explicit passing option keys" })
+  }
   return {
     _tag: "Choice",
     id: args.id,
     instructions: args.instructions,
     options: args.options,
+    passing: args.passing,
     severity: args.severity ?? "comment",
     threshold,
     include: args.include,
@@ -126,7 +182,11 @@ export const score = (args: {
   }
 }
 
-export const define = (rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> => rules
+export const define = (rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> => {
+  if (!Schema.is(RulesSchema)(rules))
+    throw new InvalidRule({ reason: "Invalid rules or duplicate ids" })
+  return rules
+}
 
 export const matchesFile = (rule: Rule, file: string): boolean => {
   const patterns = rule.include

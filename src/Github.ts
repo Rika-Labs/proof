@@ -1,4 +1,8 @@
 import { Data, Effect } from "effect"
+import { credentials, type Credentials } from "@distilled.cloud/github/Credentials"
+import { none as noRetry } from "@distilled.cloud/github/Retry"
+import { createReviewComment, listReviewComments } from "@distilled.cloud/github/pulls"
+import { FetchHttpClient, type HttpClient } from "effect/unstable/http"
 import type { Flag } from "./Review.ts"
 
 export interface PullTarget {
@@ -31,40 +35,22 @@ interface ExistingComment {
   readonly body?: string
 }
 
-const api = (
+const api = <A, E extends { readonly _tag: string }>(
   token: string,
-  path: string,
-  init?: { readonly method?: string; readonly body?: unknown },
-): Effect.Effect<unknown, GithubError> =>
-  Effect.tryPromise({
-    try: () =>
-      fetch(`https://api.github.com${path}`, {
-        method: init?.method ?? "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-          "Content-Type": "application/json",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
-        ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      }).then(async (res): Promise<unknown> => {
-        if (res.status === 204) return null
-        const json = (await res.json().catch(() => null)) as
-          | { readonly message?: string }
-          | Array<unknown>
-          | null
-        if (!res.ok) {
-          const message =
-            json !== null && !Array.isArray(json) && typeof json.message === "string"
-              ? json.message
-              : `GitHub ${res.status}`
-          throw new GithubError({ status: res.status, message })
-        }
-        return json
-      }),
-    catch: (e) =>
-      e instanceof GithubError ? e : new GithubError({ status: undefined, message: String(e) }),
-  })
+  operation: Effect.Effect<A, E, Credentials | HttpClient.HttpClient>,
+) =>
+  operation.pipe(
+    noRetry,
+    Effect.provide(credentials({ token })),
+    Effect.provide(FetchHttpClient.layer),
+    Effect.mapError(
+      (error) =>
+        new GithubError({
+          status: error._tag === "UnprocessableEntity" ? 422 : undefined,
+          message: `GitHub request failed (${error._tag})`,
+        }),
+    ),
+  )
 
 const listInlineComments = (
   token: string,
@@ -74,10 +60,16 @@ const listInlineComments = (
     const out: Array<ExistingComment> = []
     let page = 1
     while (true) {
-      const json = (yield* api(
+      const json = yield* api(
         token,
-        `/repos/${target.owner}/${target.repo}/pulls/${target.pull}/comments?per_page=100&page=${page}`,
-      )) as Array<ExistingComment>
+        listReviewComments({
+          owner: target.owner,
+          repo: target.repo,
+          pull_number: target.pull,
+          per_page: 100,
+          page,
+        }),
+      )
       out.push(...json)
       if (json.length < 100) return out
       page += 1
@@ -111,16 +103,19 @@ const postOne = (token: string, target: PullTarget, flag: Flag): Effect.Effect<v
         message: `No target line for ${flag.ruleId}`,
       })
     }
-    yield* api(token, `/repos/${target.owner}/${target.repo}/pulls/${target.pull}/comments`, {
-      method: "POST",
-      body: {
+    yield* api(
+      token,
+      createReviewComment({
+        owner: target.owner,
+        repo: target.repo,
+        pull_number: target.pull,
         body: commentBodyFor(flag),
         commit_id: target.commit,
         path: flag.file,
         line: flag.line,
         side: "RIGHT",
-      },
-    })
+      }),
+    )
   })
 
 export const postInlineComments = (
@@ -135,9 +130,13 @@ export const postInlineComments = (
     const { fresh, skipped } = partitionNew(commentable, existing)
     let posted = 0
     for (const flag of fresh) {
-      const result = yield* Effect.exit(postOne(token, target, flag))
-      // 422 = line not in diff (stale) or duplicate: count as skipped, keep going
-      if (result._tag === "Success") posted += 1
+      const accepted = yield* postOne(token, target, flag).pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          error.status === 422 ? Effect.succeed(false) : Effect.fail(error),
+        ),
+      )
+      if (accepted) posted += 1
     }
     return { posted, skipped: skipped + (fresh.length - posted), noLine }
   })

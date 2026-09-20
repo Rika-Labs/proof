@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { commentBodyFor, markerFor, partitionNew, targetFromEnv } from "../src/Github.ts"
+import {
+  commentBodyFor,
+  markerFor,
+  partitionNew,
+  postInlineComments,
+  targetFromEnv,
+} from "../src/Github.ts"
+import { Effect } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
 import { firstAddedLine } from "../src/Review.ts"
 import type { Flag } from "../src/Review.ts"
 
@@ -76,4 +84,41 @@ describe("targetFromEnv", () => {
   it("returns undefined when incomplete", () => {
     expect(targetFromEnv({ repo: "Rika-Labs/proof" })).toBeUndefined()
   })
+})
+
+describe("Distilled GitHub comments", () => {
+  it.each([422, 503])(
+    "does not retry writes; HTTP %s is distinguished from success",
+    async (status) => {
+      let calls = 0
+      const fetch: typeof globalThis.fetch = Object.assign(
+        async (
+          _url: Parameters<typeof globalThis.fetch>[0],
+          init?: Parameters<typeof globalThis.fetch>[1],
+        ) => {
+          calls++
+          if (init?.method === "GET") return new Response("[]")
+          expect(init?.method).toBe("POST")
+          expect(JSON.parse(String(init?.body))).toMatchObject({
+            path: "src/A.ts",
+            line: 12,
+            commit_id: "abc",
+            side: "RIGHT",
+          })
+          return new Response(JSON.stringify({ message: "fixture failure" }), { status })
+        },
+        { preconnect() {} },
+      )
+      const request = Effect.runPromise(
+        postInlineComments(
+          "fixture-token",
+          { owner: "example", repo: "fixture", pull: 7, commit: "abc" },
+          [flag()],
+        ).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch)),
+      )
+      if (status === 422) expect(await request).toEqual({ posted: 0, skipped: 1, noLine: 0 })
+      else await expect(request).rejects.toThrow(/GitHub request failed/)
+      expect(calls).toBe(2)
+    },
+  )
 })

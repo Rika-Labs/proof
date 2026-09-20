@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema } from "effect"
 import { McpServer, Tool, Toolkit } from "effect/unstable/ai"
-import { Jev, layer as JevLive } from "./Jev.ts"
+import { Jev, JevError, layer as JevLive } from "./Jev.ts"
 import { withFileContext } from "./Rule.ts"
 
 const desc = <S extends Schema.Top>(self: S, description: string): S =>
@@ -24,6 +24,8 @@ export const ProofCheck = Tool.make("proof_check", {
     threshold: Schema.Number,
     error: Schema.optional(Schema.String),
   }),
+  failure: Schema.String,
+  dependencies: [Jev],
 })
 
 export const ProofToolkit = Toolkit.make(ProofCheck)
@@ -40,13 +42,16 @@ export const handleProofCheck = (params: {
     readonly threshold: number
     readonly error?: string
   },
-  never,
+  JevError,
   Jev
 > => {
   const { statement, file, diff, threshold } = params
   return Effect.gen(function* () {
     const jev = yield* Jev
     const t = threshold ?? 0.75
+    if (!Number.isFinite(t) || t < 0 || t > 1) {
+      return yield* new JevError({ status: undefined, message: "threshold must be 0..1" })
+    }
     const ans = yield* jev.askNoul(
       { file, diff },
       withFileContext(`Does this diff violate the following rule? Rule: ${statement}`, file),
@@ -54,16 +59,7 @@ export const handleProofCheck = (params: {
     return ans.noul >= t
       ? { violates: true as const, noul: ans.noul, threshold: t }
       : { violates: false as const, noul: ans.noul, threshold: t }
-  }).pipe(
-    Effect.catch((e: unknown) =>
-      Effect.succeed({
-        violates: false,
-        noul: 0,
-        threshold: threshold ?? 0.75,
-        error: String(e),
-      }),
-    ),
-  )
+  })
 }
 
 export const ProofToolkitLive = McpServer.toolkit(ProofToolkit).pipe(
@@ -74,18 +70,7 @@ export const ProofToolkitLive = McpServer.toolkit(ProofToolkit).pipe(
         readonly file: string
         readonly diff: string
         readonly threshold?: number | undefined
-      }) =>
-        handleProofCheck(params).pipe(
-          Effect.provide(JevLive),
-          Effect.catch((e: unknown) =>
-            Effect.succeed({
-              violates: false,
-              noul: 0,
-              threshold: params.threshold ?? 0.75,
-              error: String(e),
-            }),
-          ),
-        ),
-    }),
+      }) => handleProofCheck(params).pipe(Effect.mapError((e) => e.message)),
+    }).pipe(Layer.provide(JevLive)),
   ),
 )

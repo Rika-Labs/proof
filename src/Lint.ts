@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
+import { Jev, JevError } from "./Jev.ts"
 import { EmptyDiff, checkHunkBatched, type Flag, type Hunk } from "./Review.ts"
 import type { Rule } from "./Rule.ts"
 import { matchesFile } from "./Rule.ts"
@@ -68,6 +69,8 @@ export const collectFiles = (
 
 /** Slice file content into fixed windows; flags point at the window start. */
 export const chunkFile = (file: string, content: string, size = 50): Array<Hunk> => {
+  if (!Number.isSafeInteger(size) || size < 1)
+    throw new RangeError("chunk size must be a positive integer")
   if (content.includes("\0")) return []
   const lines = content.split("\n")
   const chunks: Array<Hunk> = []
@@ -96,12 +99,30 @@ export const cacheKey = (file: string, content: string, rulesDigest: string): st
   `${file}:${sha(content)}:${rulesDigest}`
 
 const cachePath = (cwd: string): string => join(cwd, ".proof", "cache.json")
+const Cache = Schema.Record(
+  Schema.String,
+  Schema.Array(
+    Schema.Struct({
+      ruleId: Schema.String,
+      file: Schema.String,
+      confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+      severity: Schema.Literals(["comment", "request-changes"]),
+      detail: Schema.String,
+      line: Schema.optional(Schema.Number),
+    }),
+  ),
+)
 
 export const loadCache = (cwd: string): Record<string, ReadonlyArray<Flag>> => {
   try {
     const raw = JSON.parse(readFileSync(cachePath(cwd), "utf8")) as unknown
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {}
-    return raw as Record<string, ReadonlyArray<Flag>>
+    const decoded = Schema.decodeUnknownSync(Cache)(raw)
+    return Object.fromEntries(
+      Object.entries(decoded).map(([key, flags]) => [
+        key,
+        flags.map((flag) => ({ ...flag, line: flag.line })),
+      ]),
+    )
   } catch {
     return {}
   }
@@ -135,12 +156,29 @@ export const lintFiles = (
 > =>
   Effect.gen(function* () {
     const size = options?.chunkLines ?? 50
-    const useCache = options?.cacheDir !== false
+    if (!Number.isSafeInteger(size) || size < 1)
+      return yield* new JevError({
+        status: undefined,
+        message: "chunkLines must be a positive integer",
+      })
+    const jev = yield* Jev
+    const useCache = options?.cacheDir !== false && jev.cacheIdentity !== undefined
     const cwd =
       options?.cacheDir === undefined || options?.cacheDir === false
         ? process.cwd()
         : options.cacheDir
-    const digest = rulesHash(rules)
+    // Includes every input to interpretation and chunk construction; old cache keys cannot match.
+    const digest = sha(
+      JSON.stringify({
+        version: 2,
+        rules,
+        evaluator: jev.cacheIdentity,
+        chunkLines: size,
+        policy: "explicit-choice-v1",
+        context: "file-role-v1",
+        cwd: process.cwd(),
+      }),
+    )
     const cache = useCache ? loadCache(cwd) : {}
     const chunks: Array<{ readonly hunk: Hunk; readonly key: string }> = []
     for (const file of files) {

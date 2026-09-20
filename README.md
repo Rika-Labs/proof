@@ -9,7 +9,12 @@ _A plain-english rulebook for code review, judged by Jev. If you can say it in r
 
 </div>
 
-Local-first — **bring your own `TYPESAFE_API_KEY`**. No hosted backend, your key never leaves your machine. Requires [Bun](https://bun.sh) >= 1.2.
+Local-first — **bring your own `TYPESAFE_API_KEY`**. Proof sends evidence and the key to TypeSafe through Distilled; do not submit secrets as evidence. Requires [Bun](https://bun.sh) >= 1.2.
+
+**Development branch:** this checkout requires sibling `../distilled/packages/typesafe`
+from the Rika-Labs Distilled fork. That provider is unreleased (`0.0.0`); the local
+`file:` dependency is intentional and must be replaced by a separately approved
+release before publishing Proof. This is tested against fixtures, not live Jev.
 
 ```sh
 bun add @rikalabs/proof
@@ -41,10 +46,10 @@ export default Rule.define([
 Three rule kinds, one per Jev primitive:
 
 - `Rule.noul` — violation detectors ("does this hunk violate X?"). Most rules. Add `examples: { violate[], clean[] }` to pin the boundary with few-shots.
-- `Rule.choice` — classifiers over up to 255 options (`pass | comment | request-changes`).
+- `Rule.choice` — classifiers over up to 255 options (`pass | comment | request-changes`). Requires explicit `passing: ["pass"]`; option insertion order has no policy meaning.
 - `Rule.score` — gradients over 2–10 ordered levels (readability, risk).
 
-Every rule carries `severity` (`comment` | `request-changes`) and a `threshold`, plus optional `include` / `exclude` globs to scope which files it applies to (`**/src/**/*.ts`, `**/*.test.ts`). Confidence policy: `<0.5` skip, `0.5–0.75` nit, `>=0.75` flag, `>=0.85 + request-changes` block.
+Rules carry `severity` (`comment` | `request-changes`) and optional `include` / `exclude` globs. Noul and Choice thresholds must be finite numbers in 0..1 (default 0.75); equality flags. Choice flags non-passing options only. Score is a ranking helper and does not gate reviews. These probabilistic findings never authorize actions.
 
 ## 2. Enforce it
 
@@ -59,7 +64,7 @@ bunx @rikalabs/proof review --base origin/main --head HEAD
 cli review --help # --fail-on, --min-confidence, --format annotations|json|summary, --dry-run
 ```
 
-Whole-repo lint works the same way — walks files like oxlint, judges 50-line windows with 20 parallel Jev calls, caches hits in `.proof/cache.json` so reruns only re-judge what changed:
+Whole-repo lint walks files like oxlint and judges 50-line windows with 20 parallel Jev calls. Persistent cache reuse is disabled by default, including for rolling model aliases. An embedding host may supply an explicit `Jev.CacheIdentity` (provider/endpoint, immutable model, evaluator, and revision binding account/context) to `Jev.configuredLayer`. Cache keys bind that identity, all rules and thresholds, chunk size, file contents/path, cwd, and the interpretation/context-policy versions. Changing any of those invalidates reuse; `.proof/cache.json` is best-effort local storage, not an authorization record.
 
 ```sh
 bunx @rikalabs/proof lint
@@ -115,7 +120,7 @@ jobs:
 
 Comments land on the first added line of each violating hunk and are deduped by an HTML marker — re-runs never double-post. Pure deletions (no added line) fall back to annotations. The job fails only on flags at `--fail-on` severity with confidence `>= --min-confidence`. Add `TYPESAFE_API_KEY` under repo Settings → Secrets → Actions first.
 
-Jev outages warn instead of failing (`{ flags: [], error }`) — gate on the error if you prefer fail-closed.
+Jev outages, malformed answers, and invalid rules fail the CLI. MCP reports a tool error, never a clean zero probability. No automatic provider fallback or evaluation retry occurs.
 
 ## 3. MCP
 
@@ -157,11 +162,53 @@ Ad-hoc rule checks without a rule file go through `proof_check` — pass the eng
 
 ## Dev
 
+Effect and `@effect/ai-typesafe` are pinned to `4.0.0-rc.116`. The provider chain is
+`Decision` → native `TypeSafeDecisionModel` → injected `TypeSafeClient` →
+`@rikalabs/distilled-typesafe` → Effect HttpClient. The native TypeSafe HTTP layer
+is never used. GitHub comments use `@distilled.cloud/github@1.0.0-rc.12` with
+write retries disabled. Only 422 comment rejections are skipped; other failures
+surface. No publication or deployment is implied by these operations.
+
+Environment: `TYPESAFE_API_KEY`, `TYPESAFE_MODEL` (default `jev-latest`), and
+`TYPESAFE_API_URL` (default `https://api.typesafe.ai/v1`). The old full-endpoint
+`TYPESAFE_ENDPOINT` variable is no longer supported; use the base URL above.
+
+First pack the sibling provider using the commands in
+`../distilled/packages/typesafe/README.md`. Proof installs that local tarball,
+not a source symlink: Effect's Redacted registry requires one physical Effect
+instance. Both checkouts can otherwise install and test independently. The
+provider depends only on published `@rikalabs/distilled-core@1.0.0-rc.7` and an
+exact Effect peer; no other unpublished Distilled workspace package is required.
+
 ```sh
-bun install --frozen-lockfile
-bun run check # typecheck + lint + tests + format:check
-bun run test # vitest (Jev is stubbed — no network, no credentials)
+npx --yes bun@1.4.2 install --frozen-lockfile
+npx --yes bun@1.4.2 run check # typecheck + lint + tests + format:check
 ```
+
+## Amp plugin
+
+The directory plugin `.amp/plugins/proof` registers `jev`, `judge`, and the bundled
+`proof:jev` skill. Both tools are hidden by `builtin-tools` gating until the skill
+loads. `src/Amp.ts` exports `register(amp, services?)` for embedding; one
+ManagedRuntime is owned by each plugin instance and disposed on unload.
+
+`jev` accepts arbitrary JSON state and 1–32 bounded noul/choice/score questions.
+`Jev.decide` returns native typed Decision answers and token usage; the Amp tool
+serializes those unchanged, with `status: "evaluated"`. Unknown usage stays absent.
+Structured criteria are JSON-encoded into native Effect's string rubric slots.
+
+Judge is a custom agent created with the current `amp.createAgent` API, not an
+inherited Oracle. Its explicit tools are `Read`, `web_search`, `read_web_page`,
+`skill`, and `plugin__proof__jev`; it has no shell, edit, Oracle, or delegation
+tools. Judge inference is provided by Amp itself. Its instructions require Jev,
+source citations, counterexamples, and visible unavailable/inconclusive outcomes.
+
+Jev tool calls have a 30-second deadline. Effect interruption and runtime disposal
+cancel transport work. Amp's current `PluginToolContext` exposes no AbortSignal,
+so this adapter cannot forward individual UI cancellation of Jev. Amp forwards
+tool aborts to `judge.run`; its 10-minute wait timeout alone does not stop a child
+turn. A live Judge inference run has not been exercised. No index/search lifecycle
+or broader automatic review hooks are implemented here.
 
 ## Pre-1.0
 

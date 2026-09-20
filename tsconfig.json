@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["node", "bun-types"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", ".amp/plugins/proof/index.ts"]
 }

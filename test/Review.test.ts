@@ -12,7 +12,9 @@ describe("Rule constructors", () => {
   })
 
   it("choice rejects fewer than 2 options", () => {
-    expect(() => choice({ id: "x", instructions: "Pick", options: { only: "one" } })).toThrow()
+    expect(() =>
+      choice({ id: "x", instructions: "Pick", options: { only: "one" }, passing: ["only"] }),
+    ).toThrow()
   })
 
   it("score rejects fewer than 2 levels", () => {
@@ -124,6 +126,7 @@ describe("checkHunkBatched", () => {
             id: "c",
             instructions: "pick",
             options: { a: "first", b: "second" },
+            passing: ["a"],
             threshold: 0.5,
           }),
         ],
