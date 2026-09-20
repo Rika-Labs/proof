@@ -11,10 +11,9 @@ _A plain-english rulebook for code review, judged by Jev. If you can say it in r
 
 Local-first — **bring your own `TYPESAFE_API_KEY`**. Proof sends evidence and the key to TypeSafe through Distilled; do not submit secrets as evidence. Requires [Bun](https://bun.sh) >= 1.2.
 
-**Development branch:** this checkout requires sibling `../distilled/packages/typesafe`
-from the Rika-Labs Distilled fork. Its `1.0.0-rc.7` release is prepared but npm
-publication is blocked. Replace the local packed `file:` dependency with the
-published version and regenerate the lockfile before publishing Proof 0.5.1.
+**Release dependency:** Proof 0.5.2 requires `@rikalabs/distilled-typesafe@1.0.0-rc.7`
+from npm. The development lockfile still references the sibling Distilled tarball;
+regenerate it once that provider version is available from the registry.
 Transport tests and live Jev inference have passed; live Judge inference is unverified.
 
 ```sh
